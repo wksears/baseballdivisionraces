@@ -86,19 +86,172 @@ TEAM_NAMES_TO_COLORS.set("2024 White Sox", TEAM_NAMES_TO_COLORS.get("Chicago Whi
 let rockies = TEAM_NAMES_TO_COLORS.get("2025 Rockies");
 rockies = new TeamColors(rockies.light, "#87629d");
 TEAM_NAMES_TO_COLORS.set("2025 Rockies", rockies);
+
+const TEAM_COLOR_OVERRIDES_STORAGE_KEY = "baseballDivisionRaces.teamColorOverrides.v2";
+const FAVORITE_TEAM_STORAGE_KEY = "baseballDivisionRaces.favoriteTeam.v1";
+const LIVE_STANDINGS_CACHE_KEY_PREFIX = "baseballDivisionRaces.liveStandings.v1.";
+const VERTICAL_SCALE_STORAGE_KEY = "baseballDivisionRaces.verticalScale.v1";
+const LIVE_STANDINGS_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+const NORMAL_LINE_WIDTH = 2;
+const FAVORITE_LINE_WIDTH = 5;
+const CHART_FONT_FAMILY = "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
+const VERTICAL_SCALE_OPTIONS = [1, 1.5, 2];
+
+interface DayStandings {
+    [divisionId: string]: Array<number[]>;
+}
+
+interface LiveStandingsCache {
+    fetchedAt: number;
+    days: {[date: string]: DayStandings};
+}
+
+let liveRefreshCheckIntervalId: number|undefined;
+let activeYearRequestId = 0;
+
+function loadTeamColorOverrides(): {[key: string]: string} {
+    try {
+        const savedOverrides = JSON.parse(localStorage.getItem(TEAM_COLOR_OVERRIDES_STORAGE_KEY) || "{}");
+        if (savedOverrides && typeof savedOverrides === "object" && !Array.isArray(savedOverrides)) {
+            return savedOverrides;
+        }
+    }
+    catch (error) {
+        console.warn("Unable to load saved team colors", error);
+    }
+    return {};
+}
+
+let teamColorOverrides: {[key: string]: string} = loadTeamColorOverrides();
+
+function loadFavoriteTeam(): string {
+    try {
+        return localStorage.getItem(FAVORITE_TEAM_STORAGE_KEY) || "";
+    }
+    catch (error) {
+        console.warn("Unable to load favorite team", error);
+        return "";
+    }
+}
+
+let favoriteTeam = loadFavoriteTeam();
+
+function loadVerticalScale(): number {
+    try {
+        const savedScale = parseFloat(localStorage.getItem(VERTICAL_SCALE_STORAGE_KEY) || "1");
+        return VERTICAL_SCALE_OPTIONS.indexOf(savedScale) >= 0 ? savedScale : 1;
+    }
+    catch (error) {
+        console.warn("Unable to load vertical scale", error);
+        return 1;
+    }
+}
+
+let verticalScale = loadVerticalScale();
+
+function saveVerticalScale() {
+    try {
+        localStorage.setItem(VERTICAL_SCALE_STORAGE_KEY, verticalScale.toString());
+    }
+    catch (error) {
+        console.warn("Unable to save vertical scale", error);
+    }
+}
+
+function saveFavoriteTeam() {
+    try {
+        if (favoriteTeam) {
+            localStorage.setItem(FAVORITE_TEAM_STORAGE_KEY, favoriteTeam);
+        }
+        else {
+            localStorage.removeItem(FAVORITE_TEAM_STORAGE_KEY);
+        }
+    }
+    catch (error) {
+        console.warn("Unable to save favorite team", error);
+    }
+}
+
+function saveTeamColorOverrides() {
+    try {
+        localStorage.setItem(TEAM_COLOR_OVERRIDES_STORAGE_KEY, JSON.stringify(teamColorOverrides));
+    }
+    catch (error) {
+        console.warn("Unable to save team colors", error);
+    }
+}
+
+function getDefaultTeamColor(teamName: string): string {
+    const teamColors = TEAM_NAMES_TO_COLORS.get(teamName);
+    return (isDarkMode() ? teamColors?.dark : teamColors?.light) || "#1f77b4";
+}
+
+function getTeamColor(teamName: string): string|undefined {
+    if (!useTeamColors) {
+        return undefined;
+    }
+    const override = teamColorOverrides[teamName];
+    return HEX_COLOR_PATTERN.test(override || "") ? override : getDefaultTeamColor(teamName);
+}
+
+interface RenderedChart {
+    targetDiv: HTMLElement;
+    plotDatas: any[];
+    baseHeight: number;
+}
+
+interface PlayoffCutoff {
+    y: number;
+    teamName: string;
+    wins: number;
+    losses: number;
+}
+
+let renderedCharts: RenderedChart[] = [];
+
+function updateTeamColorInAllCharts(teamName: string, color: string) {
+    for (const chart of renderedCharts) {
+        const traceIndices = chart.plotDatas
+            .map((data, index) => data.name === teamName ? index : -1)
+            .filter(index => index >= 0);
+        if (traceIndices.length > 0) {
+            Plotly.restyle(chart.targetDiv, {"line.color": color}, traceIndices);
+        }
+    }
+}
+
+function updateTeamLineWidthInAllCharts(teamName: string, width: number) {
+    if (!teamName) {
+        return;
+    }
+    for (const chart of renderedCharts) {
+        const traceIndices = chart.plotDatas
+            .map((data, index) => data.name === teamName ? index : -1)
+            .filter(index => index >= 0);
+        if (traceIndices.length > 0) {
+            Plotly.restyle(chart.targetDiv, {"line.width": width}, traceIndices);
+        }
+    }
+}
+
+function updateAllChartHeights() {
+    for (const chart of renderedCharts) {
+        Plotly.relayout(chart.targetDiv, {height: chart.baseHeight * verticalScale});
+    }
+}
+
 // Returns the plots in reverse order so team plots with a better record get drawn
 // on top of team plots with a worse record.
 // Callers must set legend.traceorder to "reversed" to reverse the order the plots
 // show up in the legend.
 function get_plot_datas(all_standings: Array<Array<number[]>>, team_names: string[], date_values: Date[]) : any[] {
     let plot_datas = [];
-    const isDark = isDarkMode();
     const division_leader_games_above_500 = get_division_leader_games_over_500(all_standings);
     for (let i = 0; i < team_names.length; ++i) {
         const team_standings = all_standings.map(x => x[i]).filter(v => v !== undefined);
         const games_above_500 = team_standings.map(x => x[0] - x[1]);
         const hover_texts = team_standings.map((x, i) => `${x[0]}-${x[1]}\n${get_games_back_string(x, division_leader_games_above_500[i])}`);
-        const team_colors = useTeamColors ? TEAM_NAMES_TO_COLORS.get(team_names[i]) : null;
         let team_date_values = date_values.slice(0, games_above_500.length);
         plot_datas.push({
             x: team_date_values,
@@ -107,14 +260,172 @@ function get_plot_datas(all_standings: Array<Array<number[]>>, team_names: strin
             hoverinfo: "text+x",
             name: team_names[i],
             line: {
-                color: isDark ? team_colors?.dark : team_colors?.light,
-                width: 2
+                color: getTeamColor(team_names[i]),
+                width: team_names[i] === favoriteTeam ? FAVORITE_LINE_WIDTH : NORMAL_LINE_WIDTH
             }
         });
     }
     plot_datas.sort((data1, data2) => data2.y[data2.y.length - 1] - data1.y[data1.y.length - 1]);
     plot_datas.reverse();
     return plot_datas;
+}
+
+function setupFavoriteTeamSelector(teamNames: string[]) {
+    const container = document.getElementById("favoriteTeamSelector");
+    container.innerHTML = "";
+    container.className = "favorite-team-selector";
+
+    const label = document.createElement("label");
+    label.htmlFor = "favoriteTeamSelect";
+    label.textContent = "Favorite Team";
+    container.appendChild(label);
+
+    const select = document.createElement("select");
+    select.id = "favoriteTeamSelect";
+    select.setAttribute("aria-label", "Favorite Team");
+
+    const noneOption = document.createElement("option");
+    noneOption.value = "";
+    noneOption.text = "None";
+    select.add(noneOption);
+
+    const sortedTeamNames = teamNames.slice().sort((a, b) => a.localeCompare(b));
+    for (const teamName of sortedTeamNames) {
+        const option = document.createElement("option");
+        option.value = teamName;
+        option.text = teamName;
+        select.add(option);
+    }
+    select.value = sortedTeamNames.indexOf(favoriteTeam) >= 0 ? favoriteTeam : "";
+
+    select.addEventListener("change", () => {
+        const previousFavoriteTeam = favoriteTeam;
+        favoriteTeam = select.value;
+        saveFavoriteTeam();
+        updateTeamLineWidthInAllCharts(previousFavoriteTeam, NORMAL_LINE_WIDTH);
+        updateTeamLineWidthInAllCharts(favoriteTeam, FAVORITE_LINE_WIDTH);
+    });
+    container.appendChild(select);
+}
+
+function setupVerticalScaleSelector() {
+    const container = document.getElementById("verticalScaleSelector");
+    container.className = "vertical-scale-selector";
+
+    const label = document.createElement("label");
+    label.htmlFor = "verticalScaleSelect";
+    label.textContent = "Vertical Scale";
+    container.appendChild(label);
+
+    const select = document.createElement("select");
+    select.id = "verticalScaleSelect";
+    select.setAttribute("aria-label", "Vertical Scale");
+    for (const scale of VERTICAL_SCALE_OPTIONS) {
+        const option = document.createElement("option");
+        option.value = scale.toString();
+        option.text = scale.toFixed(1);
+        select.add(option);
+    }
+    select.value = verticalScale.toString();
+    select.addEventListener("change", () => {
+        verticalScale = parseFloat(select.value);
+        saveVerticalScale();
+        updateAllChartHeights();
+    });
+    container.appendChild(select);
+}
+
+function setupTeamColorControls(teamNames: string[]) {
+    const customizer = document.getElementById("teamColorCustomizer");
+    customizer.innerHTML = "";
+
+    const details = document.createElement("details");
+    details.className = "team-color-customizer";
+
+    const summary = document.createElement("summary");
+    summary.textContent = "Customize team colors";
+    details.appendChild(summary);
+
+    const scopeMessage = document.createElement("p");
+    scopeMessage.className = "team-color-scope-message";
+    scopeMessage.textContent = "Changes apply to every graph.";
+    details.appendChild(scopeMessage);
+
+    if (!useTeamColors) {
+        const disabledMessage = document.createElement("p");
+        disabledMessage.className = "team-color-disabled-message";
+        disabledMessage.textContent = "Turn on “Use team colors” to customize individual teams.";
+        details.appendChild(disabledMessage);
+        customizer.appendChild(details);
+        return;
+    }
+
+    const controls = document.createElement("div");
+    controls.className = "team-color-controls";
+    const sortedTeamNames = teamNames.slice().sort((a, b) => a.localeCompare(b));
+
+    for (const teamName of sortedTeamNames) {
+        const row = document.createElement("div");
+        row.className = "team-color-control";
+
+        const label = document.createElement("label");
+        const input = document.createElement("input");
+        input.type = "color";
+        input.value = getTeamColor(teamName) || getDefaultTeamColor(teamName);
+        input.dataset.teamName = teamName;
+        input.setAttribute("aria-label", `Color for ${teamName}`);
+        label.appendChild(input);
+        label.appendChild(document.createTextNode(teamName));
+        row.appendChild(label);
+
+        const resetButton = document.createElement("button");
+        resetButton.type = "button";
+        resetButton.className = "team-color-reset";
+        resetButton.textContent = "Reset";
+        resetButton.setAttribute("aria-label", `Reset ${teamName} color`);
+        row.appendChild(resetButton);
+
+        const updateTraceColor = (color: string) => {
+            input.value = color;
+            updateTeamColorInAllCharts(teamName, color);
+        };
+
+        input.addEventListener("input", () => {
+            teamColorOverrides[teamName] = input.value;
+            saveTeamColorOverrides();
+            updateTraceColor(input.value);
+        });
+
+        resetButton.addEventListener("click", () => {
+            delete teamColorOverrides[teamName];
+            saveTeamColorOverrides();
+            updateTraceColor(getDefaultTeamColor(teamName));
+        });
+
+        controls.appendChild(row);
+    }
+
+    details.appendChild(controls);
+
+    const resetAllButton = document.createElement("button");
+    resetAllButton.type = "button";
+    resetAllButton.className = "team-color-reset-all";
+    resetAllButton.textContent = "Reset all team colors";
+    resetAllButton.addEventListener("click", () => {
+        for (const teamName of teamNames) {
+            delete teamColorOverrides[teamName];
+        }
+        saveTeamColorOverrides();
+        const inputs = controls.querySelectorAll("input[type=color]") as NodeListOf<HTMLInputElement>;
+        for (const input of Array.from(inputs)) {
+            const teamName = input.dataset.teamName;
+            const color = getDefaultTeamColor(teamName);
+            input.value = color;
+            updateTeamColorInAllCharts(teamName, color);
+        }
+    });
+    details.appendChild(resetAllButton);
+    customizer.appendChild(details);
 }
 
 function get_games_back_string(team_standing: number[], leader_games_above_500: number): string {
@@ -152,7 +463,7 @@ function get_division_name_sort_key(division_name: string): number {
     return key;
 }
 
-function addChart(title: string, subtitle: string | undefined, team_names: string[], all_standings: Array<Array<number[]>>, opening_day: Date, multiyear?: boolean) {
+function addChart(title: string, subtitle: string | undefined, team_names: string[], all_standings: Array<Array<number[]>>, opening_day: Date, multiyear?: boolean, playoffCutoff?: PlayoffCutoff) {
     const isDark = isDarkMode();
     const astros_standings = all_standings.map(x => x[0]);
     let date_values : Date[] = [opening_day];
@@ -161,15 +472,23 @@ function addChart(title: string, subtitle: string | undefined, team_names: strin
     }
     const plot_datas = get_plot_datas(all_standings, team_names, date_values);
     const chartSection = document.getElementById("charts");
+    let chartWrapper = document.createElement('section');
+    chartWrapper.className = "chart-container";
     let targetDiv = document.createElement('div');
     targetDiv.className = "chart";
-    chartSection.appendChild(targetDiv);
+    chartWrapper.appendChild(targetDiv);
+    chartSection.appendChild(chartWrapper);
     const lots_of_teams = team_names.length >= 10;
+    const baseHeight = lots_of_teams ? 500 : 450;
 
     const DARK_TEXT_COLOR = "#111111";
     const LIGHT_TEXT_COLOR = "#eeeeee";
     let textColor = isDark ? LIGHT_TEXT_COLOR : DARK_TEXT_COLOR;
-    let plotOptions = {
+    let plotOptions: any = {
+        font: {
+            family: CHART_FONT_FAMILY,
+            color: textColor
+        },
         title: {
             text: title,
             font: {
@@ -191,7 +510,7 @@ function addChart(title: string, subtitle: string | undefined, team_names: strin
         hovermode: "x",
         paper_bgcolor: isDark ? "#262626" : "#e6e6e6",
         plot_bgcolor: isDark ? "#262626" : "#e6e6e6",
-        height: lots_of_teams ? 500 : 450
+        height: baseHeight * verticalScale
     };
     
     if (multiyear) {
@@ -200,8 +519,45 @@ function addChart(title: string, subtitle: string | undefined, team_names: strin
     if (subtitle) {
         plotOptions.title.text = plotOptions.title.text + `<br><sup>${subtitle}</sup>`;
     }
+    if (playoffCutoff) {
+        const cutoffColor = isDark ? "#f3f4f6" : "#4b5563";
+        plotOptions.shapes = [{
+            type: "line",
+            xref: "paper",
+            x0: 0,
+            x1: 1,
+            yref: "y",
+            y0: playoffCutoff.y,
+            y1: playoffCutoff.y,
+            line: {
+                color: cutoffColor,
+                width: 2,
+                dash: "dash"
+            },
+            layer: "above"
+        }];
+        plotOptions.annotations = [{
+            xref: "paper",
+            x: 0,
+            xanchor: "left",
+            xshift: 6,
+            yref: "y",
+            y: playoffCutoff.y,
+            yshift: 12,
+            text: `Current playoff cutoff: ${playoffCutoff.teamName} (${playoffCutoff.wins}-${playoffCutoff.losses})`,
+            showarrow: false,
+            font: {
+                family: CHART_FONT_FAMILY,
+                color: textColor,
+                size: 11
+            },
+            bgcolor: isDark ? "#262626" : "#e6e6e6",
+            borderpad: 2
+        }];
+    }
  
     Plotly.newPlot(targetDiv, plot_datas, plotOptions, {responsive: true});
+    renderedCharts.push({targetDiv, plotDatas: plot_datas, baseHeight});
 }
 
 function addLeagueChart(raw_data: any, league_name: string|undefined, opening_day: Date) {
@@ -220,6 +576,288 @@ function addLeagueChart(raw_data: any, league_name: string|undefined, opening_da
         }
     }
     addChart(league_name || "All MLB", undefined, league_team_names, league_all_standings, opening_day, false);
+}
+
+function getDivisionLeaderIndex(latestStandings: Array<number[]>): number {
+    let leaderIndex = 0;
+    let leaderWinningPercentage = -1;
+    let leaderWins = -1;
+    for (let index = 0; index < latestStandings.length; ++index) {
+        const wins = latestStandings[index][0];
+        const losses = latestStandings[index][1];
+        const gamesPlayed = wins + losses;
+        const winningPercentage = gamesPlayed > 0 ? wins / gamesPlayed : 0;
+        if (winningPercentage > leaderWinningPercentage ||
+            (winningPercentage === leaderWinningPercentage && wins > leaderWins)) {
+            leaderIndex = index;
+            leaderWinningPercentage = winningPercentage;
+            leaderWins = wins;
+        }
+    }
+    return leaderIndex;
+}
+
+function addWildCardChart(raw_data: any, leagueName: string, openingDay: Date) {
+    const leagueDivisionIds = Object.keys(raw_data.metadata)
+        .filter(divisionId => raw_data.metadata[divisionId]['name'].startsWith(leagueName));
+    const latestDayStandings = raw_data.standings[raw_data.standings.length - 1];
+    let wildCardTeamNames: string[] = [];
+    let wildCardStandings: Array<Array<number[]>> = raw_data.standings.map(() => []);
+
+    for (const divisionId of leagueDivisionIds) {
+        const divisionTeamNames: string[] = raw_data.metadata[divisionId]['teams'];
+        const divisionLeaderIndex = getDivisionLeaderIndex(latestDayStandings[divisionId]);
+        for (let teamIndex = 0; teamIndex < divisionTeamNames.length; ++teamIndex) {
+            if (teamIndex === divisionLeaderIndex) {
+                continue;
+            }
+            wildCardTeamNames.push(divisionTeamNames[teamIndex]);
+            for (let dayIndex = 0; dayIndex < raw_data.standings.length; ++dayIndex) {
+                wildCardStandings[dayIndex].push(raw_data.standings[dayIndex][divisionId][teamIndex]);
+            }
+        }
+    }
+
+    const latestWildCardStandings = wildCardStandings[wildCardStandings.length - 1];
+    const rankedWildCardTeams = latestWildCardStandings.map((standings, index) => {
+        const wins = standings[0];
+        const losses = standings[1];
+        return {
+            teamName: wildCardTeamNames[index],
+            wins,
+            losses,
+            winningPercentage: wins / (wins + losses)
+        };
+    });
+    rankedWildCardTeams.sort((a, b) =>
+        b.winningPercentage - a.winningPercentage ||
+        b.wins - a.wins ||
+        a.teamName.localeCompare(b.teamName)
+    );
+    const thirdWildCardTeam = rankedWildCardTeams[2];
+    const playoffCutoff: PlayoffCutoff = {
+        y: thirdWildCardTeam.wins - thirdWildCardTeam.losses,
+        teamName: thirdWildCardTeam.teamName,
+        wins: thirdWildCardTeam.wins,
+        losses: thirdWildCardTeam.losses
+    };
+
+    addChart(
+        `${leagueName} Wild Card`,
+        "Division leaders excluded based on the latest standings",
+        wildCardTeamNames,
+        wildCardStandings,
+        openingDay,
+        false,
+        playoffCutoff
+    );
+}
+
+function formatLocalDate(date: Date): string {
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, "0");
+    const day = date.getDate().toString().padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+function formatApiDate(date: Date): string {
+    const month = (date.getMonth() + 1).toString().padStart(2, "0");
+    const day = date.getDate().toString().padStart(2, "0");
+    return `${month}/${day}/${date.getFullYear()}`;
+}
+
+function getOpeningDay(rawData: any): Date {
+    const parts: number[] = (rawData.opening_day as string).split('/').map(x => parseInt(x, 10));
+    return new Date(parts[0], parts[1] - 1, parts[2]);
+}
+
+function getLastStandingsDate(rawData: any): Date {
+    const lastDate = getOpeningDay(rawData);
+    lastDate.setDate(lastDate.getDate() + rawData.standings.length - 1);
+    return lastDate;
+}
+
+function loadLiveStandingsCache(year: number): LiveStandingsCache {
+    try {
+        const saved = JSON.parse(localStorage.getItem(`${LIVE_STANDINGS_CACHE_KEY_PREFIX}${year}`) || "null");
+        if (saved && typeof saved.fetchedAt === "number" && saved.days && typeof saved.days === "object") {
+            return saved;
+        }
+    }
+    catch (error) {
+        console.warn("Unable to load cached live standings", error);
+    }
+    return {fetchedAt: 0, days: {}};
+}
+
+function saveLiveStandingsCache(year: number, cache: LiveStandingsCache) {
+    try {
+        localStorage.setItem(`${LIVE_STANDINGS_CACHE_KEY_PREFIX}${year}`, JSON.stringify(cache));
+    }
+    catch (error) {
+        console.warn("Unable to cache live standings", error);
+    }
+}
+
+function addCachedLiveStandings(rawData: any, cache: LiveStandingsCache): any {
+    const result = {...rawData, standings: rawData.standings.slice()};
+    let date = next_day(getLastStandingsDate(rawData));
+    const today = new Date();
+    while (date <= today) {
+        const cachedDay = cache.days[formatLocalDate(date)];
+        if (!cachedDay) {
+            break;
+        }
+        result.standings.push(cachedDay);
+        date = next_day(date);
+    }
+    return result;
+}
+
+async function fetchLiveDayStandings(rawData: any, date: Date): Promise<DayStandings> {
+    const params = new URLSearchParams({
+        leagueId: "103,104",
+        date: formatApiDate(date),
+        season: date.getFullYear().toString(),
+        standingsTypes: "regularSeason",
+        hydrate: "team(division)",
+        fields: "records,teamRecords,team,name,division,id,wins,losses",
+        _: Date.now().toString()
+    });
+    const response = await fetch(`https://statsapi.mlb.com/api/v1/standings?${params.toString()}`, {cache: "no-store"});
+    if (!response.ok) {
+        throw new Error(`MLB standings request failed with status ${response.status}`);
+    }
+    const apiData = await response.json();
+    const teamsByDivision: {[divisionId: string]: {[teamName: string]: number[]}} = {};
+    for (const recordGroup of apiData.records || []) {
+        for (const teamRecord of recordGroup.teamRecords || []) {
+            const divisionId = teamRecord.team.division.id.toString();
+            if (!teamsByDivision[divisionId]) {
+                teamsByDivision[divisionId] = {};
+            }
+            teamsByDivision[divisionId][teamRecord.team.name] = [teamRecord.wins, teamRecord.losses];
+        }
+    }
+
+    const dayStandings: DayStandings = {};
+    for (const divisionId of Object.keys(rawData.metadata)) {
+        const divisionTeams = teamsByDivision[divisionId] || {};
+        dayStandings[divisionId] = rawData.metadata[divisionId]['teams'].map((teamName: string) => {
+            const standings = divisionTeams[teamName];
+            if (!standings) {
+                throw new Error(`MLB standings response is missing ${teamName}`);
+            }
+            return standings;
+        });
+    }
+    return dayStandings;
+}
+
+function updateLiveRefreshStatus(rawData: any, cache: LiveStandingsCache, prefix: string = "") {
+    const status = document.getElementById("standingsRefreshStatus");
+    if (!status) {
+        return;
+    }
+    const displayedData = addCachedLiveStandings(rawData, cache);
+    const throughDate = getLastStandingsDate(displayedData).toLocaleDateString(undefined, {month: "short", day: "numeric"});
+    const refreshedText = cache.fetchedAt > 0
+        ? ` Last checked ${new Date(cache.fetchedAt).toLocaleTimeString(undefined, {hour: "numeric", minute: "2-digit"})}.`
+        : "";
+    status.textContent = `${prefix}Standings through ${throughDate}.${refreshedText}`;
+}
+
+async function refreshLiveStandings(rawData: any, year: number, force: boolean, requestId: number) {
+    const button = document.getElementById("refreshStandingsButton") as HTMLButtonElement;
+    const status = document.getElementById("standingsRefreshStatus");
+    const cache = loadLiveStandingsCache(year);
+    const today = new Date();
+    const todayKey = formatLocalDate(today);
+    const refreshIsDue = Date.now() - cache.fetchedAt >= LIVE_STANDINGS_REFRESH_INTERVAL_MS || !cache.days[todayKey];
+    if (!force && !refreshIsDue) {
+        updateLiveRefreshStatus(rawData, cache);
+        return;
+    }
+
+    if (button) {
+        button.disabled = true;
+    }
+    if (status) {
+        status.textContent = "Refreshing standings from MLB…";
+    }
+
+    try {
+        const firstLiveDate = next_day(getLastStandingsDate(rawData));
+        let date = new Date(firstLiveDate);
+        let datesToFetch: Date[] = [];
+        while (date <= today) {
+            const dateKey = formatLocalDate(date);
+            const isToday = dateKey === todayKey;
+            const isYesterday = dateKey === formatLocalDate(prev_day(today));
+            if (!cache.days[dateKey] || isToday || isYesterday) {
+                datesToFetch.push(new Date(date));
+            }
+            date = next_day(date);
+        }
+
+        for (const dateToFetch of datesToFetch) {
+            cache.days[formatLocalDate(dateToFetch)] = await fetchLiveDayStandings(rawData, dateToFetch);
+        }
+        cache.fetchedAt = Date.now();
+        saveLiveStandingsCache(year, cache);
+
+        if (requestId !== activeYearRequestId) {
+            return;
+        }
+        renderYearData(addCachedLiveStandings(rawData, cache));
+        updateLiveRefreshStatus(rawData, cache, "Updated. ");
+    }
+    catch (error) {
+        console.error("Unable to refresh live standings", error);
+        if (status) {
+            status.textContent = "Refresh failed; showing the most recent available standings.";
+        }
+    }
+    finally {
+        if (button && requestId === activeYearRequestId) {
+            button.disabled = false;
+        }
+    }
+}
+
+function setupLiveStandingsRefresh(rawData: any, year: number, requestId: number) {
+    if (liveRefreshCheckIntervalId !== undefined) {
+        window.clearInterval(liveRefreshCheckIntervalId);
+        liveRefreshCheckIntervalId = undefined;
+    }
+    const container = document.getElementById("standingsRefresh");
+    container.innerHTML = "";
+    if (year !== new Date().getFullYear()) {
+        return;
+    }
+
+    container.className = "standings-refresh";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.id = "refreshStandingsButton";
+    button.textContent = "Refresh Standings";
+    button.addEventListener("click", () => refreshLiveStandings(rawData, year, true, requestId));
+    container.appendChild(button);
+
+    const status = document.createElement("span");
+    status.id = "standingsRefreshStatus";
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+    container.appendChild(status);
+
+    const cache = loadLiveStandingsCache(year);
+    updateLiveRefreshStatus(rawData, cache);
+    refreshLiveStandings(rawData, year, false, requestId);
+    // Check hourly, but the cache guard permits an MLB request only after six hours.
+    liveRefreshCheckIntervalId = window.setInterval(
+        () => refreshLiveStandings(rawData, year, false, requestId),
+        60 * 60 * 1000
+    );
 }
 
 function findDivisionIdAndIndex(data: any, teamName: string): {divisionId: string, index: number} {
@@ -285,18 +923,21 @@ function findDivisionIdAndIndex(data: any, teamName: string): {divisionId: strin
          ["2024 White Sox", "2025 Rockies"], all_standings, opening_day, true);
 }*/
 
-async function changeYear(year: string) {
-    let response = await fetch(`data/${year}.json`);
-    let raw_data : any = await response.json();
-    const opening_day_str_parts : number[] = (raw_data.opening_day as string).split('/').map(x => parseInt(x, 10));
-    // month is 0-indexed
-    const opening_day : Date = new Date(opening_day_str_parts[0], opening_day_str_parts[1] - 1, opening_day_str_parts[2]);
-    const isDark = isDarkMode();
+function renderYearData(raw_data: any) {
+    const opening_day = getOpeningDay(raw_data);
     let divisionIds = Object.keys(raw_data.metadata);
     divisionIds.sort((a, b) => get_division_name_sort_key(raw_data.metadata[a]['name']) - get_division_name_sort_key(raw_data.metadata[b]['name']));
     let have_added_all_al = false;
 
     document.getElementById("charts").innerHTML = '';
+    renderedCharts = [];
+    let teamNamesForYear: string[] = [];
+    for (const divisionId of divisionIds) {
+        teamNamesForYear.push(...raw_data.metadata[divisionId]['teams']);
+    }
+    const uniqueTeamNamesForYear = Array.from(new Set(teamNamesForYear));
+    setupFavoriteTeamSelector(uniqueTeamNamesForYear);
+    setupTeamColorControls(uniqueTeamNamesForYear);
     //await rockiesWhiteSox(year === "2024" ? raw_data : undefined, year === "2025" ? raw_data : undefined);
 
     for (const divisionId of divisionIds) {
@@ -306,13 +947,35 @@ async function changeYear(year: string) {
         if (title.startsWith("National League") && !have_added_all_al) {
             // AL is first, put all AL teams here
             have_added_all_al = true;
+            addWildCardChart(raw_data, "American League", opening_day);
             addLeagueChart(raw_data, "American League", opening_day);
         }
         addChart(title, undefined, team_names, all_standings, opening_day);
     }
+    addWildCardChart(raw_data, "National League", opening_day);
     addLeagueChart(raw_data, "National League", opening_day);
     // undefined = all MLB
     addLeagueChart(raw_data, undefined, opening_day);
+}
+
+async function changeYear(year: string) {
+    const requestId = ++activeYearRequestId;
+    if (liveRefreshCheckIntervalId !== undefined) {
+        window.clearInterval(liveRefreshCheckIntervalId);
+        liveRefreshCheckIntervalId = undefined;
+    }
+    document.getElementById("standingsRefresh").innerHTML = "";
+
+    let response = await fetch(`data/${year}.json`);
+    let raw_data : any = await response.json();
+    if (requestId !== activeYearRequestId) {
+        return;
+    }
+
+    const numericYear = parseInt(year, 10);
+    const cache = loadLiveStandingsCache(numericYear);
+    renderYearData(numericYear === new Date().getFullYear() ? addCachedLiveStandings(raw_data, cache) : raw_data);
+    setupLiveStandingsRefresh(raw_data, numericYear, requestId);
 }
 
 function isDarkMode() : boolean {
@@ -440,7 +1103,7 @@ function getNewQueryHash(year: number, useTeamColors: boolean): string {
 
 (async function() {
     let state = parseQueryHash();
+    setupVerticalScaleSelector();
     setupTeamColorsCheckbox(state);
     setupYearSelector(state);
 })();
-

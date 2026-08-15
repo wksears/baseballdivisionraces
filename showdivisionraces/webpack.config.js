@@ -44,9 +44,23 @@ module.exports = {
   },
   devtool: 'inline-source-map',
   devServer: {
-    static: {
-      directory: paths.dist,
-    },
+    static: [
+      // Serve standings directly from their source so local data updates are
+      // visible without requiring a separate production build.
+      {
+        directory: paths.sourcemlbdata,
+        publicPath: '/data',
+      },
+      // Serve the source HTML/CSS as well; compiled JavaScript remains under
+      // /dist as referenced by public/index.html.
+      {
+        directory: paths.public,
+        publicPath: '/',
+      },
+      {
+        directory: paths.dist,
+      },
+    ],
     //contentBase: paths.dist,
     //publicPath: "/dist"*
   },

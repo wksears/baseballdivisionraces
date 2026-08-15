@@ -16,15 +16,160 @@
           document.documentElement.setAttribute('color-mode', 'dark')
       }
     </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="canonical" href="https://gregstoll.com/baseballdivisionraces" />
     <title>MLB Division Race Charts</title>
     <style>
         div.container {
-          max-width: 800px;
+          width: 100%;
+          max-width: none;
+          box-sizing: border-box;
         }
         div.chart {
           width: 100%;
           height: 20%; /* TODO */
+        }
+        .chart-container {
+          width: 100%;
+          margin-bottom: 1.5rem;
+        }
+        .team-color-customizer {
+          margin: 0 1rem 1.5rem;
+          padding: 0.5rem 0.75rem;
+          color: var(--element1, #111111);
+          background: var(--surface2, #f2f2f2);
+          border: 1px solid var(--element3, #333333);
+          border-radius: 0.4rem;
+          text-align: left;
+        }
+        .team-color-customizer summary {
+          cursor: pointer;
+          font-weight: 600;
+          text-align: center;
+        }
+        .team-color-controls {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+          gap: 0.4rem 1rem;
+          margin-top: 0.75rem;
+        }
+        .team-color-control {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 0.5rem;
+        }
+        .team-color-control label {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          min-width: 0;
+        }
+        .team-color-control input[type="color"] {
+          width: 2.25rem;
+          height: 1.75rem;
+          padding: 0;
+          cursor: pointer;
+          border: 1px solid var(--element3, #333333);
+          border-radius: 0.25rem;
+          background: transparent;
+        }
+        .team-color-reset,
+        .team-color-reset-all {
+          color: var(--element1, #111111);
+          background: var(--surface3, #ffffff);
+          border: 1px solid var(--element3, #333333);
+          border-radius: 0.3rem;
+          cursor: pointer;
+        }
+        .team-color-reset {
+          padding: 0.15rem 0.4rem;
+        }
+        .team-color-reset-all {
+          display: block;
+          margin: 0.9rem auto 0.2rem;
+          padding: 0.35rem 0.65rem;
+        }
+        .team-color-reset:hover,
+        .team-color-reset-all:hover {
+          background: var(--tertiary, #fff7d6);
+        }
+        .team-color-disabled-message {
+          margin-bottom: 0;
+          text-align: center;
+        }
+        .team-color-scope-message {
+          margin: 0.5rem 0 0;
+          text-align: center;
+        }
+        .favorite-team-selector {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.6rem;
+          margin: 0 auto 1rem;
+          color: var(--element1, #111111);
+        }
+        .vertical-scale-selector {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.6rem;
+          margin: 0 auto 1rem;
+          color: var(--element1, #111111);
+        }
+        .vertical-scale-selector label {
+          font-weight: 600;
+        }
+        .vertical-scale-selector select {
+          padding: 0.35rem 0.5rem;
+          font-size: 1rem;
+          color: var(--element1, #111111);
+          background: var(--surface3, #ffffff);
+          border: 1px solid var(--element3, #333333);
+          border-radius: 0.3rem;
+        }
+        .favorite-team-selector label {
+          font-weight: 600;
+        }
+        .favorite-team-selector select {
+          max-width: min(20rem, 65vw);
+          padding: 0.35rem 0.5rem;
+          font-size: 1rem;
+          color: var(--element1, #111111);
+          background: var(--surface3, #ffffff);
+          border: 1px solid var(--element3, #333333);
+          border-radius: 0.3rem;
+        }
+        .standings-refresh {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          justify-content: center;
+          gap: 0.65rem;
+          margin: 0 auto 1rem;
+          color: var(--element1, #111111);
+        }
+        #refreshStandingsButton {
+          padding: 0.4rem 0.7rem;
+          font-size: 1rem;
+          color: var(--element1, #111111);
+          background: var(--surface3, #ffffff);
+          border: 1px solid var(--element3, #333333);
+          border-radius: 0.3rem;
+          cursor: pointer;
+        }
+        #refreshStandingsButton:hover:not(:disabled) {
+          background: var(--tertiary, #fff7d6);
+        }
+        #refreshStandingsButton:disabled {
+          cursor: wait;
+          opacity: 0.65;
+        }
+        #standingsRefreshStatus {
+          font-size: 0.9rem;
         }
         /* TODO extract this? */
         /* https://www.geeksforgeeks.org/how-to-create-toggle-switch-by-using-html-and-css/ */
@@ -72,7 +217,11 @@
 
         /* TODO extract this */
         
-        :root[color-mode="light"] {
+        :root {
+  --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+:root[color-mode="light"] {
   --surface1: #e6e6e6;
   --surface2: #f2f2f2;
   --surface3: #ffffff;
@@ -110,6 +259,11 @@ body {
   background-color: var(--surface1, #e6e6e6) !important;
 }
 
+button,
+select {
+  font-family: var(--sans);
+}
+
 .color-mode {
   display: flex;
   flex-direction: column;
@@ -136,7 +290,9 @@ body {
 
 /* TODO is this right? */
 .color-mode__section {
-  max-width: 640px;
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
   padding: 0.5rem 1rem;
   margin-bottom: 5rem;
   color: #111111;
@@ -297,6 +453,10 @@ a:visited {
             <h1 style="display: inline-block;">MLB Division Race Charts</h1>
             <p><a href="#about">About this project</a></p>
             <!--<div><a style="font-size: 70%;" href="https://gregstoll.wordpress.com/2025/05/31/heres-where-you-can-watch-the-colorado-rockies-chase-baseball-history/">(an explanation of this first chart)</a></div>-->
+            <div id="verticalScaleSelector"></div>
+            <div id="standingsRefresh"></div>
+            <div id="favoriteTeamSelector"></div>
+            <div id="teamColorCustomizer"></div>
             <div id="charts">
             </div>
         </div>
