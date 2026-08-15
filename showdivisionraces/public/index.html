@@ -35,6 +35,19 @@
           width: 100%;
           margin-bottom: 1.5rem;
         }
+        #about {
+          max-width: 56rem;
+          margin: 3rem auto 1rem;
+          padding: 1.5rem;
+          text-align: left;
+          line-height: 1.6;
+        }
+        #about h2 {
+          margin-top: 0;
+        }
+        #about li + li {
+          margin-top: 0.35rem;
+        }
         .team-color-customizer {
           margin: 0 1rem 1.5rem;
           padding: 0.5rem 0.75rem;
@@ -461,9 +474,18 @@ a:visited {
             </div>
         </div>
     <div id="about">
-      <p><b>About this project:</b> This is a graph of each Major League Baseball team's games above or below .500.</p>
-      <p>Source files available <a href="https://github.com/gregstoll/baseballdivisionraces">on GitHub</a>. Here's a <a href="https://gregstoll.wordpress.com/2021/07/03/new-project-baseball-division-race-charts/">short writeup of the project</a>.</p>
-      <p><a href="/~gregstoll/baseball/">Baseball statistic calculators</a></p>
+      <h2>About this project</h2>
+      <p>These charts show each Major League Baseball team's games above or below .500 over the course of a season.</p>
+      <p>This customized site is a fork of <a href="https://github.com/gregstoll/baseballdivisionraces">Greg Stoll's original project</a>. Greg created the application and explains its design in <a href="https://gregstoll.wordpress.com/2021/07/03/new-project-baseball-division-race-charts/">his project write-up</a>. You can also visit <a href="https://gregstoll.com/baseballdivisionraces/">his original production version</a>.</p>
+      <p>This fork adds:</p>
+      <ul>
+        <li>Global team-color customization and a favorite-team highlight.</li>
+        <li>American League and National League Wild Card charts with current playoff-cutoff lines.</li>
+        <li>Responsive chart sizing and an adjustable vertical scale.</li>
+        <li>Standings updates every six hours plus an on-demand refresh button.</li>
+        <li>An updated interface using the Inter font.</li>
+      </ul>
+      <p>The source for this customized version is available in <a href="https://github.com/wksears/baseballdivisionraces">the fork's GitHub repository</a>.</p>
     </div>
     <script src="https://cdn.plot.ly/plotly-2.2.0.min.js"></script>
     <script type="text/javascript" src="dist/app.bundle.js"></script>
