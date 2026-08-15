@@ -35,3 +35,13 @@ The website source is [`app.ts`](showdivisionraces/src/app.ts), and the charts
 are rendered with [Plotly](https://plotly.com/javascript/). The original
 dark-mode/light-mode toggle code is credited to
 [Ryan Feigenbaum](https://ryanfeigenbaum.com/dark-mode/).
+
+## Running locally on macOS
+
+Double-click **Start MLB Charts.command** in Finder. The launcher starts the
+local development server and opens <http://127.0.0.1:8080/> automatically.
+Keep the Terminal window open while using the site, and press `Control-C` in
+that window when you want to stop the server.
+
+Node.js is required. On the first launch, the script installs the project's npm
+dependencies if they are not already present.
