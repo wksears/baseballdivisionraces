@@ -41,5 +41,11 @@ module.exports = {
     path: path.resolve(paths.dist,"dist"),
     publicPath: 'dist',
   },
+  // The minimizer bundled with this older Webpack version stalls on current
+  // Node releases. The unminified production bundle is still small enough for
+  // this site and builds reliably across supported local/hosting runtimes.
+  optimization: {
+    minimize: false,
+  },
   devtool: 'inline-source-map',
 }
