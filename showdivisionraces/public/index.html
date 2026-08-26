@@ -47,6 +47,31 @@
         #about li + li {
           margin-top: 0.35rem;
         }
+        .settings-panel {
+          width: calc(100% - 2rem);
+          max-width: 72rem;
+          box-sizing: border-box;
+          margin: 0 auto 1rem;
+          color: var(--element1, #111111);
+          background: var(--surface2, #f2f2f2);
+          border: 1px solid var(--element3, #333333);
+          border-radius: 0.4rem;
+          text-align: left;
+        }
+        .settings-panel > summary {
+          padding: 0.65rem 0.85rem;
+          cursor: pointer;
+          font-weight: 600;
+          text-align: center;
+        }
+        .settings-hint {
+          font-size: 0.85rem;
+          font-weight: 400;
+        }
+        .settings-panel__content {
+          padding: 0 0.75rem 0.75rem;
+          border-top: 1px solid var(--element3, #333333);
+        }
         .team-color-customizer {
           margin: 0 1rem 1.5rem;
           padding: 0.5rem 0.75rem;
@@ -318,8 +343,8 @@ select {
 
 .color-mode__header {
   position: relative;
-  background-color: #e6e6e6;
-  background-color: var(--surface1, #e6e6e6);
+  gap: 1rem;
+  flex-wrap: wrap;
   padding: 1rem 0;
   border-radius: var(--radius);
   display: flex;
@@ -344,7 +369,7 @@ select {
   justify-content: center;
   padding: 0.5rem;
   /*margin: 0 auto 1.5rem; */
-  margin: 0 auto;
+  margin: 0;
   font-family: var(--sans);
   font-size: 1rem;
   font-weight: 600;
@@ -393,7 +418,19 @@ a:visited {
 
 #yearSelect {
   font-size: 1.5em;
-  margin-right: 10px;
+}
+
+.year-setting,
+.team-colors-setting {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.year-setting label,
+.team-colors-setting label {
+  font-weight: 600;
 }
 
 @media only screen and (max-height: 480px) {
@@ -427,45 +464,49 @@ a:visited {
       </symbol>
     </svg>
     <div class="container color-mode color-mode__section">
-      <header class="color-mode__header">
-        <p><select id="yearSelect"></select></p>
-        <button
-          class="color-mode__btn light--hidden"
-          aria-label="Toggle light mode"
-        >
-          Toggle Light Mode
-          <svg aria-hidden="true">
-            <title>Light Mode</title>
-            <use href="#sun"></use>
-          </svg>
-        </button>
-        <button
-          class="color-mode__btn dark--hidden"
-          aria-label="Toggle dark mode"
-        >
-          Toggle Dark Mode
-          <svg aria-hidden="true">
-            <title>Dark Mode</title>
-            <use href="#moon"></use>
-          </svg>
-        </button>
-        <div style="align-self: center">
-          <div style="float: left;">
-            <input type="checkbox" id="useTeamColorsCheckbox" class="checkbox" checked><span class="toggle" id="useTeamColorsBackground"></span>
-          </div>
-          <div style="float: left; margin-left: 8px; vertical-align: middle;">
-            <label for="useTeamColorsCheckbox">Use team colors</label>
-          </div>
-        </div>
-      </header>
         <div style="width: 100%; text-align: center;">
             <h1 style="display: inline-block;">MLB Division Race Charts</h1>
             <p><a href="#about">About this project</a></p>
             <!--<div><a style="font-size: 70%;" href="https://gregstoll.wordpress.com/2025/05/31/heres-where-you-can-watch-the-colorado-rockies-chase-baseball-history/">(an explanation of this first chart)</a></div>-->
-            <div id="verticalScaleSelector"></div>
+            <details class="settings-panel">
+              <summary>⚙️ Settings <span class="settings-hint">(click to see the settings)</span></summary>
+              <div class="settings-panel__content">
+                <header class="color-mode__header">
+                  <p class="year-setting">
+                    <label for="yearSelect">Year</label>
+                    <select id="yearSelect"></select>
+                  </p>
+                  <button
+                    class="color-mode__btn light--hidden"
+                    aria-label="Toggle light mode"
+                  >
+                    Toggle Light Mode
+                    <svg aria-hidden="true">
+                      <title>Light Mode</title>
+                      <use href="#sun"></use>
+                    </svg>
+                  </button>
+                  <button
+                    class="color-mode__btn dark--hidden"
+                    aria-label="Toggle dark mode"
+                  >
+                    Toggle Dark Mode
+                    <svg aria-hidden="true">
+                      <title>Dark Mode</title>
+                      <use href="#moon"></use>
+                    </svg>
+                  </button>
+                  <div class="team-colors-setting">
+                    <input type="checkbox" id="useTeamColorsCheckbox" class="checkbox" checked><span class="toggle" id="useTeamColorsBackground"></span>
+                    <label for="useTeamColorsCheckbox">Use team colors</label>
+                  </div>
+                </header>
+                <div id="verticalScaleSelector"></div>
+                <div id="favoriteTeamSelector"></div>
+                <div id="teamColorCustomizer"></div>
+              </div>
+            </details>
             <div id="standingsRefresh"></div>
-            <div id="favoriteTeamSelector"></div>
-            <div id="teamColorCustomizer"></div>
             <div id="charts">
             </div>
         </div>
