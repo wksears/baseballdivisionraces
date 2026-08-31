@@ -213,7 +213,7 @@ let renderedCharts: RenderedChart[] = [];
 function updateTeamColorInAllCharts(teamName: string, color: string) {
     for (const chart of renderedCharts) {
         const traceIndices = chart.plotDatas
-            .map((data, index) => data.name === teamName ? index : -1)
+            .map((data, index) => (data.meta?.teamName || data.name) === teamName ? index : -1)
             .filter(index => index >= 0);
         if (traceIndices.length > 0) {
             Plotly.restyle(chart.targetDiv, {"line.color": color}, traceIndices);
@@ -227,7 +227,7 @@ function updateTeamLineWidthInAllCharts(teamName: string, width: number) {
     }
     for (const chart of renderedCharts) {
         const traceIndices = chart.plotDatas
-            .map((data, index) => data.name === teamName ? index : -1)
+            .map((data, index) => (data.meta?.teamName || data.name) === teamName ? index : -1)
             .filter(index => index >= 0);
         if (traceIndices.length > 0) {
             Plotly.restyle(chart.targetDiv, {"line.width": width}, traceIndices);
@@ -245,7 +245,7 @@ function updateAllChartHeights() {
 // on top of team plots with a worse record.
 // Callers must set legend.traceorder to "reversed" to reverse the order the plots
 // show up in the legend.
-function get_plot_datas(all_standings: Array<Array<number[]>>, team_names: string[], date_values: Date[]) : any[] {
+function get_plot_datas(all_standings: Array<Array<number[]>>, team_names: string[], date_values: Date[], boldLegendTeamNames?: Set<string>) : any[] {
     let plot_datas = [];
     const division_leader_games_above_500 = get_division_leader_games_over_500(all_standings);
     for (let i = 0; i < team_names.length; ++i) {
@@ -258,7 +258,8 @@ function get_plot_datas(all_standings: Array<Array<number[]>>, team_names: strin
             y: games_above_500,
             text: hover_texts,
             hoverinfo: "text+x",
-            name: team_names[i],
+            name: boldLegendTeamNames?.has(team_names[i]) ? `<b>${team_names[i]}</b>` : team_names[i],
+            meta: {teamName: team_names[i]},
             line: {
                 color: getTeamColor(team_names[i]),
                 width: team_names[i] === favoriteTeam ? FAVORITE_LINE_WIDTH : NORMAL_LINE_WIDTH
@@ -463,14 +464,14 @@ function get_division_name_sort_key(division_name: string): number {
     return key;
 }
 
-function addChart(title: string, subtitle: string | undefined, team_names: string[], all_standings: Array<Array<number[]>>, opening_day: Date, multiyear?: boolean, playoffCutoff?: PlayoffCutoff) {
+function addChart(title: string, subtitle: string | undefined, team_names: string[], all_standings: Array<Array<number[]>>, opening_day: Date, multiyear?: boolean, playoffCutoff?: PlayoffCutoff, boldLegendTeamNames?: Set<string>) {
     const isDark = isDarkMode();
     const astros_standings = all_standings.map(x => x[0]);
     let date_values : Date[] = [opening_day];
     while (date_values.length < astros_standings.length) {
         date_values.push(next_day(date_values[date_values.length - 1]))
     }
-    const plot_datas = get_plot_datas(all_standings, team_names, date_values);
+    const plot_datas = get_plot_datas(all_standings, team_names, date_values, boldLegendTeamNames);
     const chartSection = document.getElementById("charts");
     let chartWrapper = document.createElement('section');
     chartWrapper.className = "chart-container";
@@ -634,6 +635,9 @@ function addWildCardChart(raw_data: any, leagueName: string, openingDay: Date) {
         b.wins - a.wins ||
         a.teamName.localeCompare(b.teamName)
     );
+    const qualifiedWildCardTeamNames = new Set(
+        rankedWildCardTeams.slice(0, 3).map(team => team.teamName)
+    );
     const thirdWildCardTeam = rankedWildCardTeams[2];
     const playoffCutoff: PlayoffCutoff = {
         y: thirdWildCardTeam.wins - thirdWildCardTeam.losses,
@@ -649,7 +653,8 @@ function addWildCardChart(raw_data: any, leagueName: string, openingDay: Date) {
         wildCardStandings,
         openingDay,
         false,
-        playoffCutoff
+        playoffCutoff,
+        qualifiedWildCardTeamNames
     );
 }
 
