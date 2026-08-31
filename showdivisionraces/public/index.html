@@ -33,6 +33,31 @@
         .chart-container {
           width: 100%;
           margin-bottom: 1.5rem;
+          scroll-margin-top: 1rem;
+        }
+        .chart-navigation {
+          width: calc(100% - 2rem);
+          max-width: 42rem;
+          box-sizing: border-box;
+          margin: 0 auto 1.5rem;
+          padding: 0.8rem 1rem;
+          color: var(--element1, #111111);
+          background: var(--surface2, #f2f2f2);
+          border: 1px solid var(--element3, #333333);
+          border-radius: 0.4rem;
+          line-height: 1.6;
+        }
+        .chart-navigation p {
+          margin: 0.35rem 0;
+        }
+        .chart-navigation__league {
+          font-weight: 700;
+        }
+        .chart-navigation__links {
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: center;
+          gap: 0 0.4rem;
         }
         #about {
           max-width: 56rem;
@@ -507,6 +532,23 @@ a:visited {
               </div>
             </details>
             <div id="standingsRefresh"></div>
+            <nav class="chart-navigation" aria-label="Jump to a chart">
+              <p><a class="chart-navigation__league" href="#american-league">American League</a></p>
+              <p class="chart-navigation__links">
+                <a href="#american-league-west">West</a><span aria-hidden="true">|</span>
+                <a href="#american-league-central">Central</a><span aria-hidden="true">|</span>
+                <a href="#american-league-east">East</a><span aria-hidden="true">|</span>
+                <a href="#american-league-wild-card">Wildcard</a>
+              </p>
+              <p><a class="chart-navigation__league" href="#national-league">National League</a></p>
+              <p class="chart-navigation__links">
+                <a href="#national-league-west">West</a><span aria-hidden="true">|</span>
+                <a href="#national-league-central">Central</a><span aria-hidden="true">|</span>
+                <a href="#national-league-east">East</a><span aria-hidden="true">|</span>
+                <a href="#national-league-wild-card">Wildcard</a>
+              </p>
+              <p><a class="chart-navigation__league" href="#mlb">MLB</a></p>
+            </nav>
             <div id="charts">
             </div>
         </div>

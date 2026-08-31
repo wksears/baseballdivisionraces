@@ -208,6 +208,20 @@ interface PlayoffCutoff {
     losses: number;
 }
 
+const CHART_ANCHOR_IDS: {[title: string]: string} = {
+    "American League West": "american-league-west",
+    "American League Central": "american-league-central",
+    "American League East": "american-league-east",
+    "American League Wild Card": "american-league-wild-card",
+    "American League": "american-league",
+    "National League West": "national-league-west",
+    "National League Central": "national-league-central",
+    "National League East": "national-league-east",
+    "National League Wild Card": "national-league-wild-card",
+    "National League": "national-league",
+    "All MLB": "mlb"
+};
+
 let renderedCharts: RenderedChart[] = [];
 
 function updateTeamColorInAllCharts(teamName: string, color: string) {
@@ -475,6 +489,9 @@ function addChart(title: string, subtitle: string | undefined, team_names: strin
     const chartSection = document.getElementById("charts");
     let chartWrapper = document.createElement('section');
     chartWrapper.className = "chart-container";
+    if (CHART_ANCHOR_IDS[title]) {
+        chartWrapper.id = CHART_ANCHOR_IDS[title];
+    }
     let targetDiv = document.createElement('div');
     targetDiv.className = "chart";
     chartWrapper.appendChild(targetDiv);
