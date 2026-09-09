@@ -105,6 +105,12 @@ interface DayStandings {
 interface LiveStandingsCache {
     fetchedAt: number;
     days: {[date: string]: DayStandings};
+    eliminatedWildCardTeamNames?: string[];
+}
+
+interface LiveDayStandingsResult {
+    standings: DayStandings;
+    eliminatedWildCardTeamNames: string[];
 }
 
 let liveRefreshCheckIntervalId: number|undefined;
@@ -619,6 +625,7 @@ function addWildCardChart(raw_data: any, leagueName: string, openingDay: Date) {
     const leagueDivisionIds = Object.keys(raw_data.metadata)
         .filter(divisionId => raw_data.metadata[divisionId]['name'].startsWith(leagueName));
     const latestDayStandings = raw_data.standings[raw_data.standings.length - 1];
+    const eliminatedWildCardTeamNames = new Set<string>(raw_data.eliminatedWildCardTeamNames || []);
     let wildCardTeamNames: string[] = [];
     let wildCardStandings: Array<Array<number[]>> = raw_data.standings.map(() => []);
 
@@ -626,7 +633,7 @@ function addWildCardChart(raw_data: any, leagueName: string, openingDay: Date) {
         const divisionTeamNames: string[] = raw_data.metadata[divisionId]['teams'];
         const divisionLeaderIndex = getDivisionLeaderIndex(latestDayStandings[divisionId]);
         for (let teamIndex = 0; teamIndex < divisionTeamNames.length; ++teamIndex) {
-            if (teamIndex === divisionLeaderIndex) {
+            if (teamIndex === divisionLeaderIndex || eliminatedWildCardTeamNames.has(divisionTeamNames[teamIndex])) {
                 continue;
             }
             wildCardTeamNames.push(divisionTeamNames[teamIndex]);
@@ -722,7 +729,11 @@ function saveLiveStandingsCache(year: number, cache: LiveStandingsCache) {
 }
 
 function addCachedLiveStandings(rawData: any, cache: LiveStandingsCache): any {
-    const result = {...rawData, standings: rawData.standings.slice()};
+    const result = {
+        ...rawData,
+        standings: rawData.standings.slice(),
+        eliminatedWildCardTeamNames: cache.eliminatedWildCardTeamNames || []
+    };
     let date = next_day(getLastStandingsDate(rawData));
     const today = new Date();
     while (date <= today) {
@@ -736,14 +747,14 @@ function addCachedLiveStandings(rawData: any, cache: LiveStandingsCache): any {
     return result;
 }
 
-async function fetchLiveDayStandings(rawData: any, date: Date): Promise<DayStandings> {
+async function fetchLiveDayStandings(rawData: any, date: Date): Promise<LiveDayStandingsResult> {
     const params = new URLSearchParams({
         leagueId: "103,104",
         date: formatApiDate(date),
         season: date.getFullYear().toString(),
         standingsTypes: "regularSeason",
         hydrate: "team(division)",
-        fields: "records,teamRecords,team,name,division,id,wins,losses",
+        fields: "records,teamRecords,team,name,division,id,wins,losses,wildCardEliminationNumber",
         _: Date.now().toString()
     });
     const response = await fetch(`https://statsapi.mlb.com/api/v1/standings?${params.toString()}`, {cache: "no-store"});
@@ -752,6 +763,7 @@ async function fetchLiveDayStandings(rawData: any, date: Date): Promise<DayStand
     }
     const apiData = await response.json();
     const teamsByDivision: {[divisionId: string]: {[teamName: string]: number[]}} = {};
+    const eliminatedWildCardTeamNames: string[] = [];
     for (const recordGroup of apiData.records || []) {
         for (const teamRecord of recordGroup.teamRecords || []) {
             const divisionId = teamRecord.team.division.id.toString();
@@ -759,6 +771,9 @@ async function fetchLiveDayStandings(rawData: any, date: Date): Promise<DayStand
                 teamsByDivision[divisionId] = {};
             }
             teamsByDivision[divisionId][teamRecord.team.name] = [teamRecord.wins, teamRecord.losses];
+            if (teamRecord.wildCardEliminationNumber === "E") {
+                eliminatedWildCardTeamNames.push(teamRecord.team.name);
+            }
         }
     }
 
@@ -773,7 +788,7 @@ async function fetchLiveDayStandings(rawData: any, date: Date): Promise<DayStand
             return standings;
         });
     }
-    return dayStandings;
+    return {standings: dayStandings, eliminatedWildCardTeamNames};
 }
 
 function updateLiveRefreshStatus(rawData: any, cache: LiveStandingsCache, prefix: string = "") {
@@ -795,7 +810,8 @@ async function refreshLiveStandings(rawData: any, year: number, force: boolean, 
     const cache = loadLiveStandingsCache(year);
     const today = new Date();
     const todayKey = formatLocalDate(today);
-    const refreshIsDue = Date.now() - cache.fetchedAt >= LIVE_STANDINGS_REFRESH_INTERVAL_MS || !cache.days[todayKey];
+    const refreshIsDue = Date.now() - cache.fetchedAt >= LIVE_STANDINGS_REFRESH_INTERVAL_MS ||
+        !cache.days[todayKey] || !Array.isArray(cache.eliminatedWildCardTeamNames);
     if (!force && !refreshIsDue) {
         updateLiveRefreshStatus(rawData, cache);
         return;
@@ -823,7 +839,9 @@ async function refreshLiveStandings(rawData: any, year: number, force: boolean, 
         }
 
         for (const dateToFetch of datesToFetch) {
-            cache.days[formatLocalDate(dateToFetch)] = await fetchLiveDayStandings(rawData, dateToFetch);
+            const liveDay = await fetchLiveDayStandings(rawData, dateToFetch);
+            cache.days[formatLocalDate(dateToFetch)] = liveDay.standings;
+            cache.eliminatedWildCardTeamNames = liveDay.eliminatedWildCardTeamNames;
         }
         cache.fetchedAt = Date.now();
         saveLiveStandingsCache(year, cache);
