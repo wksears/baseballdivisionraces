@@ -28,12 +28,42 @@
         }
         div.chart {
           width: 100%;
+          max-width: 100%;
+          min-width: 0;
           height: 20%; /* TODO */
         }
         .chart-container {
           width: 100%;
+          max-width: 100%;
+          min-width: 0;
+          overflow: hidden;
           margin-bottom: 1.5rem;
           scroll-margin-top: 1rem;
+        }
+        .mobile-chart-legend {
+          display: none;
+        }
+        .chart-range-selector {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.6rem;
+          width: calc(100% - 2rem);
+          max-width: 42rem;
+          box-sizing: border-box;
+          margin: 0 auto 1rem;
+          color: var(--element1, #111111);
+        }
+        .chart-range-selector label {
+          font-weight: 600;
+        }
+        .chart-range-selector select {
+          padding: 0.4rem 0.55rem;
+          font-size: 1rem;
+          color: var(--element1, #111111);
+          background: var(--surface3, #ffffff);
+          border: 1px solid var(--element3, #333333);
+          border-radius: 0.3rem;
         }
         .chart-navigation {
           width: calc(100% - 2rem);
@@ -350,6 +380,91 @@ select {
   }
 }
 
+@media (max-width: 640px) and (orientation: portrait) {
+  .color-mode {
+    padding: 0.5rem 0;
+  }
+  .color-mode.color-mode__section {
+    padding: 0.35rem 0;
+  }
+  .color-mode__section h1 {
+    padding: 0 0.75rem;
+    font-size: 1.55rem;
+    line-height: 1.2;
+  }
+  .chart-container {
+    margin-bottom: 1.15rem;
+  }
+  .chart,
+  .chart .js-plotly-plot,
+  .chart .plot-container,
+  .chart .svg-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+  .mobile-chart-legend {
+    display: block;
+    width: calc(100% - 1rem);
+    max-height: 12rem;
+    box-sizing: border-box;
+    margin: -0.2rem auto 1rem;
+    padding: 0.45rem 0.6rem;
+    overflow: auto;
+    color: var(--element1, #111111);
+    background: var(--surface2, #f2f2f2);
+    border: 1px solid var(--element3, #333333);
+    border-radius: 0.35rem;
+    text-align: left;
+  }
+  .mobile-chart-legend summary {
+    min-height: 2rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+    line-height: 2rem;
+    text-align: center;
+  }
+  .mobile-chart-legend__list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem 0.65rem;
+    padding: 0.45rem 0 0.2rem;
+  }
+  .mobile-chart-legend__item {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+    font-size: 0.78rem;
+    line-height: 1.2;
+  }
+  .mobile-chart-legend__swatch {
+    flex: 0 0 1.4rem;
+    width: 1.4rem;
+    height: 0.18rem;
+    border-radius: 999px;
+  }
+  .chart.mobile-chart .modebar-container {
+    opacity: 0 !important;
+    pointer-events: none;
+    transition: opacity 0.15s ease-in;
+  }
+  .chart.mobile-chart.mobile-toolbar-visible .modebar-container {
+    opacity: 1 !important;
+    pointer-events: auto;
+  }
+  .chart-navigation,
+  .settings-panel,
+  .chart-range-selector {
+    width: calc(100% - 1rem);
+  }
+  .chart-navigation {
+    padding: 0.65rem 0.75rem;
+    font-size: 0.92rem;
+  }
+}
+
 /* TODO is this right? */
 .color-mode__section {
   width: 100%;
@@ -532,6 +647,7 @@ a:visited {
               </div>
             </details>
             <div id="standingsRefresh"></div>
+            <div id="chartRangeSelector"></div>
             <nav class="chart-navigation" aria-label="Jump to a chart">
               <p><a class="chart-navigation__league" href="#american-league">American League</a></p>
               <p class="chart-navigation__links">

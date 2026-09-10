@@ -91,12 +91,16 @@ const TEAM_COLOR_OVERRIDES_STORAGE_KEY = "baseballDivisionRaces.teamColorOverrid
 const FAVORITE_TEAM_STORAGE_KEY = "baseballDivisionRaces.favoriteTeam.v1";
 const LIVE_STANDINGS_CACHE_KEY_PREFIX = "baseballDivisionRaces.liveStandings.v1.";
 const VERTICAL_SCALE_STORAGE_KEY = "baseballDivisionRaces.verticalScale.v1";
+const CHART_RANGE_STORAGE_KEY = "baseballDivisionRaces.chartRange.v1";
 const LIVE_STANDINGS_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 const NORMAL_LINE_WIDTH = 2;
 const FAVORITE_LINE_WIDTH = 5;
 const CHART_FONT_FAMILY = "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
 const VERTICAL_SCALE_OPTIONS = [1, 1.5, 2];
+const MOBILE_PORTRAIT_QUERY = "(max-width: 640px) and (orientation: portrait)";
+
+type ChartRange = "30"|"full";
 
 interface DayStandings {
     [divisionId: string]: Array<number[]>;
@@ -156,6 +160,34 @@ function loadVerticalScale(): number {
 
 let verticalScale = loadVerticalScale();
 
+function isMobilePortrait(): boolean {
+    return window.matchMedia(MOBILE_PORTRAIT_QUERY).matches;
+}
+
+function loadChartRange(): ChartRange {
+    try {
+        const savedRange = localStorage.getItem(CHART_RANGE_STORAGE_KEY);
+        if (savedRange === "30" || savedRange === "full") {
+            return savedRange;
+        }
+    }
+    catch (error) {
+        console.warn("Unable to load chart range", error);
+    }
+    return isMobilePortrait() ? "30" : "full";
+}
+
+let chartRange: ChartRange = loadChartRange();
+
+function saveChartRange() {
+    try {
+        localStorage.setItem(CHART_RANGE_STORAGE_KEY, chartRange);
+    }
+    catch (error) {
+        console.warn("Unable to save chart range", error);
+    }
+}
+
 function saveVerticalScale() {
     try {
         localStorage.setItem(VERTICAL_SCALE_STORAGE_KEY, verticalScale.toString());
@@ -204,7 +236,13 @@ function getTeamColor(teamName: string): string|undefined {
 interface RenderedChart {
     targetDiv: HTMLElement;
     plotDatas: any[];
-    baseHeight: number;
+    desktopBaseHeight: number;
+    mobileBaseHeight: number;
+    earliestDate: Date;
+    latestDate: Date;
+    playoffCutoff?: PlayoffCutoff;
+    mobileLegendSwatches: Map<string, HTMLElement>;
+    toolbarHideTimer?: number;
 }
 
 interface PlayoffCutoff {
@@ -237,6 +275,10 @@ function updateTeamColorInAllCharts(teamName: string, color: string) {
             .filter(index => index >= 0);
         if (traceIndices.length > 0) {
             Plotly.restyle(chart.targetDiv, {"line.color": color}, traceIndices);
+            const swatch = chart.mobileLegendSwatches.get(teamName);
+            if (swatch) {
+                swatch.style.backgroundColor = color;
+            }
         }
     }
 }
@@ -257,8 +299,111 @@ function updateTeamLineWidthInAllCharts(teamName: string, width: number) {
 
 function updateAllChartHeights() {
     for (const chart of renderedCharts) {
-        Plotly.relayout(chart.targetDiv, {height: chart.baseHeight * verticalScale});
+        applyResponsiveChartLayout(chart);
     }
+}
+
+function getShortTeamName(teamName: string): string {
+    const parts = teamName.split(" ");
+    const finalWord = parts[parts.length - 1];
+    if (["Sox", "Jays"].indexOf(finalWord) >= 0 && parts.length >= 2) {
+        return parts.slice(-2).join(" ");
+    }
+    return finalWord;
+}
+
+function getChartRangeLayout(chart: RenderedChart): any {
+    if (chartRange === "full") {
+        return {"xaxis.autorange": true};
+    }
+    const firstVisibleDate = new Date(chart.latestDate);
+    firstVisibleDate.setDate(firstVisibleDate.getDate() - 29);
+    if (firstVisibleDate < chart.earliestDate) {
+        firstVisibleDate.setTime(chart.earliestDate.getTime());
+    }
+    return {
+        "xaxis.autorange": false,
+        "xaxis.range": [firstVisibleDate, chart.latestDate]
+    };
+}
+
+function applyResponsiveChartLayout(chart: RenderedChart) {
+    const mobile = isMobilePortrait();
+    const layout: any = {
+        height: (mobile ? chart.mobileBaseHeight : chart.desktopBaseHeight) * verticalScale,
+        showlegend: !mobile,
+        "title.font.size": mobile ? 16 : 20,
+        "xaxis.nticks": mobile ? 5 : 0,
+        "xaxis.tickfont.size": mobile ? 11 : 12,
+        "yaxis.tickfont.size": mobile ? 11 : 12,
+        "margin.l": mobile ? 42 : 80,
+        "margin.r": mobile ? 8 : 80,
+        "margin.t": mobile ? 72 : 100,
+        "margin.b": mobile ? 54 : 80,
+        ...getChartRangeLayout(chart)
+    };
+    if (chart.playoffCutoff) {
+        layout["annotations[0].text"] = mobile
+            ? `WC cutoff: ${getShortTeamName(chart.playoffCutoff.teamName)}`
+            : `Current playoff cutoff: ${chart.playoffCutoff.teamName} (${chart.playoffCutoff.wins}-${chart.playoffCutoff.losses})`;
+        layout["annotations[0].font.size"] = mobile ? 10 : 11;
+        layout["annotations[0].hovertext"] = `Current playoff cutoff: ${chart.playoffCutoff.teamName} (${chart.playoffCutoff.wins}-${chart.playoffCutoff.losses})`;
+    }
+    chart.targetDiv.classList.toggle("mobile-chart", mobile);
+    if (!mobile) {
+        chart.targetDiv.classList.remove("mobile-toolbar-visible");
+    }
+    Plotly.relayout(chart.targetDiv, layout);
+    Plotly.Plots.resize(chart.targetDiv);
+}
+
+function updateAllChartRanges() {
+    for (const chart of renderedCharts) {
+        Plotly.relayout(chart.targetDiv, getChartRangeLayout(chart));
+    }
+}
+
+function setupChartRangeSelector() {
+    const container = document.getElementById("chartRangeSelector");
+    container.className = "chart-range-selector";
+
+    const label = document.createElement("label");
+    label.htmlFor = "chartRangeSelect";
+    label.textContent = "Date Range";
+    container.appendChild(label);
+
+    const select = document.createElement("select");
+    select.id = "chartRangeSelect";
+    select.setAttribute("aria-label", "Chart date range");
+    const options: Array<{value: ChartRange, label: string}> = [
+        {value: "30", label: "Last 30 days"},
+        {value: "full", label: "Full season"}
+    ];
+    for (const rangeOption of options) {
+        const option = document.createElement("option");
+        option.value = rangeOption.value;
+        option.text = rangeOption.label;
+        select.add(option);
+    }
+    select.value = chartRange;
+    select.addEventListener("change", () => {
+        chartRange = select.value as ChartRange;
+        saveChartRange();
+        updateAllChartRanges();
+    });
+    container.appendChild(select);
+}
+
+let chartResizeTimer: number|undefined;
+function scheduleResponsiveChartUpdate() {
+    if (chartResizeTimer !== undefined) {
+        window.clearTimeout(chartResizeTimer);
+    }
+    chartResizeTimer = window.setTimeout(() => {
+        for (const chart of renderedCharts) {
+            applyResponsiveChartLayout(chart);
+        }
+    }, 120);
 }
 
 // Returns the plots in reverse order so team plots with a better record get drawn
@@ -501,9 +646,40 @@ function addChart(title: string, subtitle: string | undefined, team_names: strin
     let targetDiv = document.createElement('div');
     targetDiv.className = "chart";
     chartWrapper.appendChild(targetDiv);
+    const mobileLegend = document.createElement("details");
+    mobileLegend.className = "mobile-chart-legend";
+    mobileLegend.open = team_names.length <= 10;
+    const mobileLegendSummary = document.createElement("summary");
+    mobileLegendSummary.textContent = `Teams (${team_names.length})`;
+    mobileLegend.appendChild(mobileLegendSummary);
+    const mobileLegendList = document.createElement("div");
+    mobileLegendList.className = "mobile-chart-legend__list";
+    mobileLegendList.setAttribute("role", "list");
+    mobileLegend.appendChild(mobileLegendList);
+    chartWrapper.appendChild(mobileLegend);
     chartSection.appendChild(chartWrapper);
     const lots_of_teams = team_names.length >= 10;
-    const baseHeight = lots_of_teams ? 500 : 450;
+    const desktopBaseHeight = lots_of_teams ? 500 : 450;
+    const mobileBaseHeight = lots_of_teams ? 430 : 390;
+    const mobile = isMobilePortrait();
+    const mobileLegendSwatches = new Map<string, HTMLElement>();
+
+    for (const plotData of plot_datas.slice().reverse()) {
+        const teamName = plotData.meta?.teamName || plotData.name;
+        const item = document.createElement("span");
+        item.className = "mobile-chart-legend__item";
+        item.setAttribute("role", "listitem");
+        const swatch = document.createElement("span");
+        swatch.className = "mobile-chart-legend__swatch";
+        swatch.style.backgroundColor = plotData.line.color || "#1f77b4";
+        swatch.setAttribute("aria-hidden", "true");
+        const name = document.createElement("span");
+        name.innerHTML = plotData.name;
+        item.appendChild(swatch);
+        item.appendChild(name);
+        mobileLegendList.appendChild(item);
+        mobileLegendSwatches.set(teamName, swatch);
+    }
 
     const DARK_TEXT_COLOR = "#111111";
     const LIGHT_TEXT_COLOR = "#eeeeee";
@@ -534,7 +710,9 @@ function addChart(title: string, subtitle: string | undefined, team_names: strin
         hovermode: "x",
         paper_bgcolor: isDark ? "#262626" : "#e6e6e6",
         plot_bgcolor: isDark ? "#262626" : "#e6e6e6",
-        height: baseHeight * verticalScale
+        height: (mobile ? mobileBaseHeight : desktopBaseHeight) * verticalScale,
+        showlegend: !mobile,
+        margin: mobile ? {l: 42, r: 8, t: 72, b: 54} : undefined
     };
     
     if (multiyear) {
@@ -569,6 +747,8 @@ function addChart(title: string, subtitle: string | undefined, team_names: strin
             y: playoffCutoff.y,
             yshift: 12,
             text: `Current playoff cutoff: ${playoffCutoff.teamName} (${playoffCutoff.wins}-${playoffCutoff.losses})`,
+            hovertext: `Current playoff cutoff: ${playoffCutoff.teamName} (${playoffCutoff.wins}-${playoffCutoff.losses})`,
+            captureevents: true,
             showarrow: false,
             font: {
                 family: CHART_FONT_FAMILY,
@@ -579,9 +759,51 @@ function addChart(title: string, subtitle: string | undefined, team_names: strin
             borderpad: 2
         }];
     }
- 
-    Plotly.newPlot(targetDiv, plot_datas, plotOptions, {responsive: true});
-    renderedCharts.push({targetDiv, plotDatas: plot_datas, baseHeight});
+
+    if (mobile && playoffCutoff) {
+        plotOptions.annotations[0].text = `WC cutoff: ${getShortTeamName(playoffCutoff.teamName)}`;
+        plotOptions.annotations[0].font.size = 10;
+    }
+    if (chartRange === "30") {
+        const firstVisibleDate = new Date(date_values[date_values.length - 1]);
+        firstVisibleDate.setDate(firstVisibleDate.getDate() - 29);
+        if (firstVisibleDate < date_values[0]) {
+            firstVisibleDate.setTime(date_values[0].getTime());
+        }
+        plotOptions.xaxis.autorange = false;
+        plotOptions.xaxis.range = [firstVisibleDate, date_values[date_values.length - 1]];
+    }
+    if (mobile) {
+        plotOptions.title.font.size = 16;
+        plotOptions.xaxis.nticks = 5;
+        plotOptions.xaxis.tickfont = {size: 11};
+        plotOptions.yaxis.tickfont = {size: 11};
+    }
+
+    Plotly.newPlot(targetDiv, plot_datas, plotOptions, {responsive: true, displayModeBar: "hover"});
+    const renderedChart: RenderedChart = {
+        targetDiv,
+        plotDatas: plot_datas,
+        desktopBaseHeight,
+        mobileBaseHeight,
+        earliestDate: date_values[0],
+        latestDate: date_values[date_values.length - 1],
+        playoffCutoff,
+        mobileLegendSwatches
+    };
+    targetDiv.addEventListener("pointerdown", () => {
+        if (!isMobilePortrait()) {
+            return;
+        }
+        targetDiv.classList.add("mobile-toolbar-visible");
+        if (renderedChart.toolbarHideTimer !== undefined) {
+            window.clearTimeout(renderedChart.toolbarHideTimer);
+        }
+        renderedChart.toolbarHideTimer = window.setTimeout(() => {
+            targetDiv.classList.remove("mobile-toolbar-visible");
+        }, 4500);
+    });
+    renderedCharts.push(renderedChart);
 }
 
 function addLeagueChart(raw_data: any, league_name: string|undefined, opening_day: Date) {
@@ -1144,6 +1366,9 @@ function getNewQueryHash(year: number, useTeamColors: boolean): string {
 (async function() {
     let state = parseQueryHash();
     setupVerticalScaleSelector();
+    setupChartRangeSelector();
     setupTeamColorsCheckbox(state);
     setupYearSelector(state);
+    window.addEventListener("resize", scheduleResponsiveChartUpdate);
+    window.addEventListener("orientationchange", scheduleResponsiveChartUpdate);
 })();
