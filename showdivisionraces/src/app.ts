@@ -117,8 +117,30 @@ interface LiveDayStandingsResult {
     eliminatedWildCardTeamNames: string[];
 }
 
+interface PlayoffOddsTeam {
+    team: string;
+    abbreviation: string;
+    league: "AL"|"NL";
+    division: "E"|"C"|"W";
+    makePlayoffs: number;
+    winDivision: number;
+    clinchBye: number;
+    winWorldSeries: number;
+}
+
+interface PlayoffOddsSnapshot {
+    source: string;
+    sourceUrl: string;
+    model: string;
+    asOf: string;
+    fetchedAt: string;
+    teams: PlayoffOddsTeam[];
+}
+
 let liveRefreshCheckIntervalId: number|undefined;
 let activeYearRequestId = 0;
+let currentPlayoffOdds: PlayoffOddsSnapshot|undefined;
+let playoffOddsByTeam = new Map<string, PlayoffOddsTeam>();
 
 function loadTeamColorOverrides(): {[key: string]: string} {
     try {
@@ -312,6 +334,16 @@ function getShortTeamName(teamName: string): string {
     return finalWord;
 }
 
+function formatProbability(probability: number): string {
+    return `${(probability * 100).toFixed(1)}%`;
+}
+
+function getLegendTeamName(teamName: string, bold: boolean): string {
+    const odds = playoffOddsByTeam.get(teamName);
+    const label = odds ? `${teamName} · ${formatProbability(odds.makePlayoffs)}` : teamName;
+    return bold ? `<b>${label}</b>` : label;
+}
+
 function getChartRangeLayout(chart: RenderedChart): any {
     if (chartRange === "full") {
         return {"xaxis.autorange": true};
@@ -423,7 +455,7 @@ function get_plot_datas(all_standings: Array<Array<number[]>>, team_names: strin
             y: games_above_500,
             text: hover_texts,
             hoverinfo: "text+x",
-            name: boldLegendTeamNames?.has(team_names[i]) ? `<b>${team_names[i]}</b>` : team_names[i],
+            name: getLegendTeamName(team_names[i], boldLegendTeamNames?.has(team_names[i]) || false),
             meta: {teamName: team_names[i]},
             line: {
                 color: getTeamColor(team_names[i]),
@@ -434,6 +466,122 @@ function get_plot_datas(all_standings: Array<Array<number[]>>, team_names: strin
     plot_datas.sort((data1, data2) => data2.y[data2.y.length - 1] - data1.y[data1.y.length - 1]);
     plot_datas.reverse();
     return plot_datas;
+}
+
+function renderPlayoffOddsPanel(snapshot?: PlayoffOddsSnapshot) {
+    const container = document.getElementById("playoffOdds");
+    container.innerHTML = "";
+    if (!snapshot) {
+        return;
+    }
+
+    const details = document.createElement("details");
+    details.className = "playoff-odds-panel";
+    details.open = true;
+
+    const summary = document.createElement("summary");
+    summary.textContent = "FanGraphs playoff chances";
+    details.appendChild(summary);
+
+    const body = document.createElement("div");
+    body.className = "playoff-odds-panel__body";
+
+    const asOfDate = new Date(`${snapshot.asOf}T12:00:00`);
+    const intro = document.createElement("p");
+    intro.className = "playoff-odds-panel__intro";
+    intro.appendChild(document.createTextNode(
+        `Daily ${snapshot.model} projections as of ${asOfDate.toLocaleDateString(undefined, {month: "long", day: "numeric", year: "numeric"})}. `
+    ));
+    const sourceLink = document.createElement("a");
+    sourceLink.href = snapshot.sourceUrl;
+    sourceLink.target = "_blank";
+    sourceLink.rel = "noopener noreferrer";
+    sourceLink.textContent = "View on FanGraphs";
+    intro.appendChild(sourceLink);
+    body.appendChild(intro);
+
+    const grid = document.createElement("div");
+    grid.className = "playoff-odds-grid";
+    const divisions: Array<{league: "AL"|"NL", division: "E"|"C"|"W", label: string}> = [
+        {league: "AL", division: "E", label: "AL East"},
+        {league: "AL", division: "C", label: "AL Central"},
+        {league: "AL", division: "W", label: "AL West"},
+        {league: "NL", division: "E", label: "NL East"},
+        {league: "NL", division: "C", label: "NL Central"},
+        {league: "NL", division: "W", label: "NL West"}
+    ];
+
+    for (const division of divisions) {
+        const section = document.createElement("section");
+        section.className = "playoff-odds-division";
+        const heading = document.createElement("h3");
+        heading.textContent = division.label;
+        section.appendChild(heading);
+
+        const table = document.createElement("table");
+        const head = document.createElement("thead");
+        const headRow = document.createElement("tr");
+        for (const label of ["Team", "Playoffs", "Division"]) {
+            const cell = document.createElement("th");
+            cell.scope = "col";
+            cell.textContent = label;
+            headRow.appendChild(cell);
+        }
+        head.appendChild(headRow);
+        table.appendChild(head);
+
+        const tableBody = document.createElement("tbody");
+        const teams = snapshot.teams
+            .filter(team => team.league === division.league && team.division === division.division)
+            .sort((a, b) => b.makePlayoffs - a.makePlayoffs || a.team.localeCompare(b.team));
+        for (const team of teams) {
+            const row = document.createElement("tr");
+            if (team.team === favoriteTeam) {
+                row.className = "favorite-team-row";
+            }
+            const name = document.createElement("th");
+            name.scope = "row";
+            name.textContent = getShortTeamName(team.team);
+            name.title = team.team;
+            row.appendChild(name);
+            for (const probability of [team.makePlayoffs, team.winDivision]) {
+                const cell = document.createElement("td");
+                cell.textContent = formatProbability(probability);
+                row.appendChild(cell);
+            }
+            tableBody.appendChild(row);
+        }
+        table.appendChild(tableBody);
+        section.appendChild(table);
+        grid.appendChild(section);
+    }
+    body.appendChild(grid);
+    details.appendChild(body);
+    container.appendChild(details);
+}
+
+async function loadPlayoffOddsSnapshot(): Promise<PlayoffOddsSnapshot|undefined> {
+    try {
+        const response = await fetch("data/fangraphs-playoff-odds.json", {cache: "no-store"});
+        if (!response.ok) {
+            throw new Error(`FanGraphs snapshot request failed with status ${response.status}`);
+        }
+        const snapshot = await response.json() as PlayoffOddsSnapshot;
+        if (!Array.isArray(snapshot.teams) || snapshot.teams.length !== 30) {
+            throw new Error("FanGraphs snapshot does not contain all 30 teams");
+        }
+        return snapshot;
+    }
+    catch (error) {
+        console.warn("Unable to load FanGraphs playoff odds", error);
+        return undefined;
+    }
+}
+
+function setCurrentPlayoffOdds(snapshot?: PlayoffOddsSnapshot) {
+    currentPlayoffOdds = snapshot;
+    playoffOddsByTeam = new Map((snapshot?.teams || []).map(team => [team.team, team]));
+    renderPlayoffOddsPanel(snapshot);
 }
 
 function setupFavoriteTeamSelector(teamNames: string[]) {
@@ -470,6 +618,7 @@ function setupFavoriteTeamSelector(teamNames: string[]) {
         saveFavoriteTeam();
         updateTeamLineWidthInAllCharts(previousFavoriteTeam, NORMAL_LINE_WIDTH);
         updateTeamLineWidthInAllCharts(favoriteTeam, FAVORITE_LINE_WIDTH);
+        renderPlayoffOddsPanel(currentPlayoffOdds);
     });
     container.appendChild(select);
 }
@@ -1228,13 +1377,18 @@ async function changeYear(year: string) {
     }
     document.getElementById("standingsRefresh").innerHTML = "";
 
+    const numericYear = parseInt(year, 10);
+    const oddsPromise = numericYear === new Date().getFullYear()
+        ? loadPlayoffOddsSnapshot()
+        : Promise.resolve(undefined);
     let response = await fetch(`data/${year}.json`);
     let raw_data : any = await response.json();
+    const playoffOdds = await oddsPromise;
     if (requestId !== activeYearRequestId) {
         return;
     }
 
-    const numericYear = parseInt(year, 10);
+    setCurrentPlayoffOdds(playoffOdds);
     const cache = loadLiveStandingsCache(numericYear);
     renderYearData(numericYear === new Date().getFullYear() ? addCachedLiveStandings(raw_data, cache) : raw_data);
     setupLiveStandingsRefresh(raw_data, numericYear, requestId);

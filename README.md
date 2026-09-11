@@ -21,6 +21,9 @@ You can also view [Greg's original production version](https://gregstoll.com/bas
 - Added a vertical-scale selector with `1.0`, `1.5`, and `2.0` options.
 - Added live standings refreshes every six hours and a **Refresh Standings**
   button for an immediate manual update.
+- Added a daily FanGraphs playoff-odds snapshot with current postseason and
+  division probabilities for all 30 teams. Current odds also appear beside
+  team names in chart legends.
 - Updated the interface and charts to use the Inter font.
 - Updated the included 2026 standings data beyond the original early-season
   sample.
@@ -35,6 +38,11 @@ The website source is [`app.ts`](showdivisionraces/src/app.ts), and the charts
 are rendered with [Plotly](https://plotly.com/javascript/). The original
 dark-mode/light-mode toggle code is credited to
 [Ryan Feigenbaum](https://ryanfeigenbaum.com/dark-mode/).
+
+Current playoff probabilities are stored in
+[`fangraphs-playoff-odds.json`](showdivisionraces/public/data/fangraphs-playoff-odds.json).
+The build validates that the snapshot contains 30 unique teams and valid
+probabilities before publishing it.
 
 ## Running locally on macOS
 

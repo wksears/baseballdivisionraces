@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "start": "webpack serve --live-reload",
-    "build": "webpack --config webpack.prod.config.js && node replaceSsiTags.js",
+    "build": "node scripts/validate-playoff-odds.mjs && webpack --config webpack.prod.config.js && node replaceSsiTags.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
