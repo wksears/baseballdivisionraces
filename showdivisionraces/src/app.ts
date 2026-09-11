@@ -338,6 +338,17 @@ function formatProbability(probability: number): string {
     return `${(probability * 100).toFixed(1)}%`;
 }
 
+function formatPlayoffProbability(probability: number): string {
+    const formattedProbability = formatProbability(probability);
+    if (formattedProbability === "100.0%") {
+        return `${formattedProbability} ✅`;
+    }
+    if (formattedProbability === "0.0%") {
+        return `${formattedProbability} ❌`;
+    }
+    return formattedProbability;
+}
+
 function getLegendTeamName(teamName: string, bold: boolean): string {
     const odds = playoffOddsByTeam.get(teamName);
     const label = odds ? `${teamName} · ${formatProbability(odds.makePlayoffs)}` : teamName;
@@ -544,9 +555,11 @@ function renderPlayoffOddsPanel(snapshot?: PlayoffOddsSnapshot) {
             name.textContent = getShortTeamName(team.team);
             name.title = team.team;
             row.appendChild(name);
-            for (const probability of [team.makePlayoffs, team.winDivision]) {
+            for (const [index, probability] of [team.makePlayoffs, team.winDivision].entries()) {
                 const cell = document.createElement("td");
-                cell.textContent = formatProbability(probability);
+                cell.textContent = index === 0
+                    ? formatPlayoffProbability(probability)
+                    : formatProbability(probability);
                 row.appendChild(cell);
             }
             tableBody.appendChild(row);
