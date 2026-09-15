@@ -13,6 +13,9 @@ You can also view [Greg's original production version](https://gregstoll.com/bas
 - Added a favorite-team selector. The selected team's line is emphasized in
   every chart and the preference is saved in the browser.
 - Added American League and National League Wild Card race charts.
+- Added live postseason-race tables beneath both Wild Card charts, including
+  division leaders, Wild Card slots, teams in the hunt, and record-based magic
+  and tragic numbers.
 - Added a dashed playoff-cutoff line to each Wild Card chart at the current
   third-place position, with the label placed on the left to keep recent data
   unobstructed.

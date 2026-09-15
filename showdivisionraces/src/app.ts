@@ -274,6 +274,17 @@ interface PlayoffCutoff {
     losses: number;
 }
 
+interface RaceTableTeam {
+    teamName: string;
+    divisionId: string;
+    divisionName: string;
+    wins: number;
+    losses: number;
+    winningPercentage: number;
+    divisionLeader: boolean;
+    slot: string;
+}
+
 const CHART_ANCHOR_IDS: {[title: string]: string} = {
     "American League West": "american-league-west",
     "American League Central": "american-league-central",
@@ -316,6 +327,13 @@ function updateTeamLineWidthInAllCharts(teamName: string, width: number) {
         if (traceIndices.length > 0) {
             Plotly.restyle(chart.targetDiv, {"line.width": width}, traceIndices);
         }
+    }
+}
+
+function updateFavoriteTeamInStandingsTables() {
+    const rows = document.querySelectorAll(".wild-card-standings-table tbody tr[data-team-name]") as NodeListOf<HTMLTableRowElement>;
+    for (const row of Array.from(rows)) {
+        row.classList.toggle("favorite-team-row", row.dataset.teamName === favoriteTeam);
     }
 }
 
@@ -631,6 +649,7 @@ function setupFavoriteTeamSelector(teamNames: string[]) {
         saveFavoriteTeam();
         updateTeamLineWidthInAllCharts(previousFavoriteTeam, NORMAL_LINE_WIDTH);
         updateTeamLineWidthInAllCharts(favoriteTeam, FAVORITE_LINE_WIDTH);
+        updateFavoriteTeamInStandingsTables();
         renderPlayoffOddsPanel(currentPlayoffOdds);
     });
     container.appendChild(select);
@@ -791,7 +810,7 @@ function get_division_name_sort_key(division_name: string): number {
     return key;
 }
 
-function addChart(title: string, subtitle: string | undefined, team_names: string[], all_standings: Array<Array<number[]>>, opening_day: Date, multiyear?: boolean, playoffCutoff?: PlayoffCutoff, boldLegendTeamNames?: Set<string>) {
+function addChart(title: string, subtitle: string | undefined, team_names: string[], all_standings: Array<Array<number[]>>, opening_day: Date, multiyear?: boolean, playoffCutoff?: PlayoffCutoff, boldLegendTeamNames?: Set<string>): HTMLElement {
     const isDark = isDarkMode();
     const astros_standings = all_standings.map(x => x[0]);
     let date_values : Date[] = [opening_day];
@@ -966,6 +985,7 @@ function addChart(title: string, subtitle: string | undefined, team_names: strin
         }, 4500);
     });
     renderedCharts.push(renderedChart);
+    return chartWrapper;
 }
 
 function addLeagueChart(raw_data: any, league_name: string|undefined, opening_day: Date) {
@@ -1005,6 +1025,172 @@ function getDivisionLeaderIndex(latestStandings: Array<number[]>): number {
     return leaderIndex;
 }
 
+function compareRaceTableTeams(a: RaceTableTeam, b: RaceTableTeam): number {
+    return b.winningPercentage - a.winningPercentage ||
+        b.wins - a.wins ||
+        a.teamName.localeCompare(b.teamName);
+}
+
+function getScheduledSeasonGames(year: number): number {
+    if (year === 1995) {
+        return 144;
+    }
+    if (year === 2020) {
+        return 60;
+    }
+    return 162;
+}
+
+function formatRaceNumber(value: number, terminalLabel: string): string {
+    return value <= 0 ? terminalLabel : value.toString();
+}
+
+function formatWildCardGamesBack(team: RaceTableTeam, cutoffTeam: RaceTableTeam|undefined): string {
+    if (team.divisionLeader || !cutoffTeam) {
+        return "-";
+    }
+    const gamesBack = ((cutoffTeam.wins - team.wins) + (team.losses - cutoffTeam.losses)) / 2;
+    if (gamesBack === 0) {
+        return "-";
+    }
+    const formattedGamesBack = Math.abs(gamesBack).toFixed(1);
+    return gamesBack < 0 ? `+${formattedGamesBack}` : formattedGamesBack;
+}
+
+function appendWildCardStandingsTable(
+    chartWrapper: HTMLElement,
+    rawData: any,
+    leagueName: string,
+    leagueDivisionIds: string[],
+    latestDayStandings: DayStandings,
+    eliminatedWildCardTeamNames: Set<string>
+) {
+    let teams: RaceTableTeam[] = [];
+    for (const divisionId of leagueDivisionIds) {
+        const metadata = rawData.metadata[divisionId];
+        const divisionTeamNames: string[] = metadata['teams'];
+        const divisionLeaderIndex = getDivisionLeaderIndex(latestDayStandings[divisionId]);
+        for (let teamIndex = 0; teamIndex < divisionTeamNames.length; ++teamIndex) {
+            const standings = latestDayStandings[divisionId][teamIndex];
+            const wins = standings[0];
+            const losses = standings[1];
+            teams.push({
+                teamName: divisionTeamNames[teamIndex],
+                divisionId,
+                divisionName: metadata['name'].replace(`${leagueName} `, ""),
+                wins,
+                losses,
+                winningPercentage: wins + losses > 0 ? wins / (wins + losses) : 0,
+                divisionLeader: teamIndex === divisionLeaderIndex,
+                slot: ""
+            });
+        }
+    }
+
+    const divisionLeaders = teams.filter(team => team.divisionLeader);
+    const wildCardTeams = teams.filter(team => !team.divisionLeader).sort(compareRaceTableTeams);
+    wildCardTeams.slice(0, 3).forEach((team, index) => team.slot = `WC${index + 1}`);
+    divisionLeaders.forEach(team => team.slot = "DIV");
+
+    const cutoffTeam = wildCardTeams[Math.min(2, wildCardTeams.length - 1)];
+    const firstTeamOut = wildCardTeams[Math.min(3, wildCardTeams.length - 1)];
+    const seasonGames = getScheduledSeasonGames(getOpeningDay(rawData).getFullYear());
+    const eliminationBase = seasonGames + 1;
+    const tablePanel = document.createElement("section");
+    tablePanel.className = "wild-card-standings";
+
+    const heading = document.createElement("h3");
+    heading.textContent = `${leagueName} postseason race standings`;
+    tablePanel.appendChild(heading);
+
+    const scrollArea = document.createElement("div");
+    scrollArea.className = "wild-card-standings__scroll";
+    scrollArea.tabIndex = 0;
+    const table = document.createElement("table");
+    table.className = "wild-card-standings-table";
+    const throughDate = getLastStandingsDate(rawData).toLocaleDateString(undefined, {
+        month: "long",
+        day: "numeric",
+        year: "numeric"
+    });
+    const caption = document.createElement("caption");
+    caption.textContent = `Standings through ${throughDate}`;
+    table.appendChild(caption);
+
+    const tableHead = document.createElement("thead");
+    const headingRow = document.createElement("tr");
+    for (const columnName of ["Team", "Magic", "Tragic", "Slot", "Div", "GP", "GR", "WCGB"] as string[]) {
+        const cell = document.createElement("th");
+        cell.scope = "col";
+        cell.textContent = columnName;
+        headingRow.appendChild(cell);
+    }
+    tableHead.appendChild(headingRow);
+    table.appendChild(tableHead);
+
+    const tableBody = document.createElement("tbody");
+    const addGroupHeading = (label: string) => {
+        const row = document.createElement("tr");
+        row.className = "wild-card-standings-table__group";
+        const cell = document.createElement("th");
+        cell.colSpan = 8;
+        cell.scope = "rowgroup";
+        cell.textContent = label;
+        row.appendChild(cell);
+        tableBody.appendChild(row);
+    };
+    const addTeamRow = (team: RaceTableTeam) => {
+        const row = document.createElement("tr");
+        row.dataset.teamName = team.teamName;
+        row.classList.toggle("favorite-team-row", team.teamName === favoriteTeam);
+
+        const magicOpponent = team.slot ? firstTeamOut : cutoffTeam;
+        const magicNumber = magicOpponent ? eliminationBase - team.wins - magicOpponent.losses : eliminationBase - team.wins;
+        const tragicNumber = cutoffTeam ? eliminationBase - team.losses - cutoffTeam.wins : eliminationBase - team.losses;
+        const eliminated = eliminatedWildCardTeamNames.has(team.teamName) || tragicNumber <= 0;
+        const cells = [
+            team.teamName,
+            formatRaceNumber(magicNumber, "Clinched"),
+            eliminated ? "Eliminated" : formatRaceNumber(tragicNumber, "Eliminated"),
+            team.slot,
+            team.divisionName,
+            (team.wins + team.losses).toString(),
+            Math.max(0, seasonGames - team.wins - team.losses).toString(),
+            formatWildCardGamesBack(team, cutoffTeam)
+        ];
+        cells.forEach((value, index) => {
+            const cell = document.createElement(index === 0 ? "th" : "td");
+            if (index === 0) {
+                (cell as HTMLTableCellElement).scope = "row";
+            }
+            cell.textContent = value;
+            row.appendChild(cell);
+        });
+        tableBody.appendChild(row);
+    };
+
+    const divisionOrder: {[name: string]: number} = {East: 0, Central: 1, West: 2};
+    divisionLeaders.sort((a, b) => (divisionOrder[a.divisionName] ?? 99) - (divisionOrder[b.divisionName] ?? 99));
+    for (const divisionLeader of divisionLeaders) {
+        addGroupHeading(divisionLeader.divisionName);
+        addTeamRow(divisionLeader);
+    }
+    addGroupHeading("Wild Cards");
+    wildCardTeams.slice(0, 3).forEach(addTeamRow);
+    addGroupHeading("In the Hunt");
+    wildCardTeams.slice(3).forEach(addTeamRow);
+
+    table.appendChild(tableBody);
+    scrollArea.appendChild(table);
+    tablePanel.appendChild(scrollArea);
+
+    const note = document.createElement("p");
+    note.className = "wild-card-standings__note";
+    note.textContent = "DIV = division leader; WC1–WC3 = Wild Card spots; GR = games remaining; WCGB = games behind the final Wild Card spot (+ means ahead). Magic and tragic numbers are record-based; MLB tiebreakers can shift them by one game.";
+    tablePanel.appendChild(note);
+    chartWrapper.appendChild(tablePanel);
+}
+
 function addWildCardChart(raw_data: any, leagueName: string, openingDay: Date) {
     const leagueDivisionIds = Object.keys(raw_data.metadata)
         .filter(divisionId => raw_data.metadata[divisionId]['name'].startsWith(leagueName));
@@ -1017,10 +1203,14 @@ function addWildCardChart(raw_data: any, leagueName: string, openingDay: Date) {
         const divisionTeamNames: string[] = raw_data.metadata[divisionId]['teams'];
         const divisionLeaderIndex = getDivisionLeaderIndex(latestDayStandings[divisionId]);
         for (let teamIndex = 0; teamIndex < divisionTeamNames.length; ++teamIndex) {
-            if (teamIndex === divisionLeaderIndex || eliminatedWildCardTeamNames.has(divisionTeamNames[teamIndex])) {
+            const teamName = divisionTeamNames[teamIndex];
+            const hasNoFanGraphsPlayoffChance = playoffOddsByTeam.get(teamName)?.makePlayoffs === 0;
+            if (teamIndex === divisionLeaderIndex ||
+                eliminatedWildCardTeamNames.has(teamName) ||
+                hasNoFanGraphsPlayoffChance) {
                 continue;
             }
-            wildCardTeamNames.push(divisionTeamNames[teamIndex]);
+            wildCardTeamNames.push(teamName);
             for (let dayIndex = 0; dayIndex < raw_data.standings.length; ++dayIndex) {
                 wildCardStandings[dayIndex].push(raw_data.standings[dayIndex][divisionId][teamIndex]);
             }
@@ -1054,15 +1244,23 @@ function addWildCardChart(raw_data: any, leagueName: string, openingDay: Date) {
         losses: thirdWildCardTeam.losses
     };
 
-    addChart(
+    const chartWrapper = addChart(
         `${leagueName} Wild Card`,
-        "Division leaders excluded based on the latest standings",
+        "Division leaders and teams with no playoff chance excluded",
         wildCardTeamNames,
         wildCardStandings,
         openingDay,
         false,
         playoffCutoff,
         qualifiedWildCardTeamNames
+    );
+    appendWildCardStandingsTable(
+        chartWrapper,
+        raw_data,
+        leagueName,
+        leagueDivisionIds,
+        latestDayStandings,
+        eliminatedWildCardTeamNames
     );
 }
 

@@ -40,6 +40,81 @@
           margin-bottom: 1.5rem;
           scroll-margin-top: 1rem;
         }
+        .wild-card-standings {
+          width: calc(100% - 2rem);
+          max-width: 72rem;
+          box-sizing: border-box;
+          margin: -0.5rem auto 2rem;
+          color: var(--element1, #111111);
+          text-align: left;
+        }
+        .wild-card-standings h3 {
+          margin: 0 0 0.5rem;
+          font-size: 1.1rem;
+          text-align: center;
+        }
+        .wild-card-standings__scroll {
+          overflow-x: auto;
+          border: 1px solid var(--element3, #333333);
+          border-radius: 0.4rem;
+          background: var(--surface3, #ffffff);
+        }
+        .wild-card-standings-table {
+          width: 100%;
+          min-width: 47rem;
+          border-collapse: collapse;
+          font-size: 0.88rem;
+          font-variant-numeric: tabular-nums;
+        }
+        .wild-card-standings-table caption {
+          padding: 0.55rem 0.7rem;
+          color: var(--element2, #222222);
+          background: var(--surface2, #f2f2f2);
+          font-size: 0.82rem;
+          text-align: left;
+        }
+        .wild-card-standings-table th,
+        .wild-card-standings-table td {
+          padding: 0.45rem 0.6rem;
+          border-top: 1px solid color-mix(in srgb, var(--element3, #333333) 22%, transparent);
+          white-space: nowrap;
+        }
+        .wild-card-standings-table thead th {
+          border-top: 0;
+          background: var(--surface2, #f2f2f2);
+          color: var(--element2, #222222);
+          font-size: 0.78rem;
+          text-align: right;
+        }
+        .wild-card-standings-table thead th:first-child,
+        .wild-card-standings-table tbody th[scope="row"] {
+          text-align: left;
+        }
+        .wild-card-standings-table tbody th[scope="row"] {
+          font-weight: 600;
+        }
+        .wild-card-standings-table td {
+          text-align: right;
+        }
+        .wild-card-standings-table__group th {
+          padding: 0.32rem 0.6rem;
+          background: color-mix(in srgb, var(--primary, #01408e) 12%, var(--surface2, #f2f2f2));
+          color: var(--element1, #111111);
+          font-size: 0.78rem;
+          letter-spacing: 0.035em;
+          text-align: left;
+          text-transform: uppercase;
+        }
+        .wild-card-standings-table .favorite-team-row {
+          background: var(--tertiary, #fff7d6);
+          color: #111111;
+        }
+        .wild-card-standings__note {
+          margin: 0.45rem 0 0;
+          color: var(--element2, #222222);
+          font-size: 0.78rem;
+          text-align: center;
+        }
         .mobile-chart-legend {
           display: none;
         }
@@ -532,7 +607,8 @@ select {
   .chart-navigation,
   .settings-panel,
   .chart-range-selector,
-  .playoff-odds-panel {
+  .playoff-odds-panel,
+  .wild-card-standings {
     width: calc(100% - 1rem);
   }
   .playoff-odds-grid {
@@ -756,7 +832,7 @@ a:visited {
       <p>This fork adds:</p>
       <ul>
         <li>Global team-color customization and a favorite-team highlight.</li>
-        <li>American League and National League Wild Card charts with current playoff-cutoff lines.</li>
+        <li>American League and National League Wild Card charts with current playoff-cutoff lines and live postseason-race tables.</li>
         <li>Responsive chart sizing and an adjustable vertical scale.</li>
         <li>Standings updates every six hours plus an on-demand refresh button.</li>
         <li>Daily FanGraphs playoff and division probabilities for all 30 teams.</li>
