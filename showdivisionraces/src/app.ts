@@ -80,6 +80,46 @@ TEAM_NAMES_TO_COLORS.set("Florida Marlins", TEAM_NAMES_TO_COLORS.get("Miami Marl
 TEAM_NAMES_TO_COLORS.set("Montreal Expos", TEAM_NAMES_TO_COLORS.get("Washington Nationals"));
 TEAM_NAMES_TO_COLORS.set("Oakland Athletics", TEAM_NAMES_TO_COLORS.get("Athletics"));
 
+const TEAM_NAMES_TO_MLB_IDS: Map<string, number> = new Map([
+    ["Arizona Diamondbacks", 109],
+    ["Atlanta Braves", 144],
+    ["Baltimore Orioles", 110],
+    ["Boston Red Sox", 111],
+    ["Chicago Cubs", 112],
+    ["Chicago White Sox", 145],
+    ["Cincinnati Reds", 113],
+    ["Cleveland Guardians", 114],
+    ["Cleveland Indians", 114],
+    ["Colorado Rockies", 115],
+    ["Detroit Tigers", 116],
+    ["Houston Astros", 117],
+    ["Kansas City Royals", 118],
+    ["Los Angeles Angels", 108],
+    ["Anaheim Angels", 108],
+    ["California Angels", 108],
+    ["Los Angeles Dodgers", 119],
+    ["Miami Marlins", 146],
+    ["Florida Marlins", 146],
+    ["Milwaukee Brewers", 158],
+    ["Minnesota Twins", 142],
+    ["New York Mets", 121],
+    ["New York Yankees", 147],
+    ["Athletics", 133],
+    ["Oakland Athletics", 133],
+    ["Philadelphia Phillies", 143],
+    ["Pittsburgh Pirates", 134],
+    ["San Diego Padres", 135],
+    ["San Francisco Giants", 137],
+    ["Seattle Mariners", 136],
+    ["St. Louis Cardinals", 138],
+    ["Tampa Bay Rays", 139],
+    ["Tampa Bay Devil Rays", 139],
+    ["Texas Rangers", 140],
+    ["Toronto Blue Jays", 141],
+    ["Washington Nationals", 120],
+    ["Montreal Expos", 120]
+]);
+
 TEAM_NAMES_TO_COLORS.set("2025 Rockies", TEAM_NAMES_TO_COLORS.get("Colorado Rockies"));
 TEAM_NAMES_TO_COLORS.set("2024 White Sox", TEAM_NAMES_TO_COLORS.get("Chicago White Sox"));
 // Irritatingly these two teams have very similar dark colors
@@ -1162,8 +1202,26 @@ function appendWildCardStandingsTable(
             const cell = document.createElement(index === 0 ? "th" : "td");
             if (index === 0) {
                 (cell as HTMLTableCellElement).scope = "row";
+                cell.className = "wild-card-standings-table__team";
+                cell.textContent = "";
+                const teamId = TEAM_NAMES_TO_MLB_IDS.get(team.teamName);
+                if (teamId) {
+                    const logo = document.createElement("img");
+                    logo.className = "wild-card-standings-table__logo";
+                    logo.src = `https://www.mlbstatic.com/team-logos/${teamId}.svg`;
+                    logo.alt = "";
+                    logo.loading = "lazy";
+                    logo.decoding = "async";
+                    logo.setAttribute("aria-hidden", "true");
+                    cell.appendChild(logo);
+                }
+                const teamName = document.createElement("span");
+                teamName.textContent = value;
+                cell.appendChild(teamName);
             }
-            cell.textContent = value;
+            else {
+                cell.textContent = value;
+            }
             row.appendChild(cell);
         });
         tableBody.appendChild(row);
